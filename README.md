@@ -486,7 +486,7 @@ In this repository. Or manually download the docker-compose.yml file and then ru
 
 ### Render.com
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/getAlby/hub)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/LCSOGthb/hub)
 
 ## Alby Hub Architecture
 
