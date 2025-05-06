@@ -7,7 +7,7 @@ toolchain go1.24.2
 require (
 	github.com/adrg/xdg v0.5.3
 	github.com/elnosh/gonuts v0.4.0
-	github.com/getAlby/ldk-node-go v0.0.0-20250409032721-a0b2d497fc2c
+	github.com/getAlby/ldk-node-go v0.0.0-20250503035148-4f935f853d83
 	github.com/go-gormigrate/gormigrate/v2 v2.1.4
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/nbd-wtf/go-nostr v0.51.10
@@ -18,7 +18,7 @@ require (
 	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/wailsapp/wails/v2 v2.10.1
 	golang.org/x/crypto v0.37.0
-	golang.org/x/oauth2 v0.29.0
+	golang.org/x/oauth2 v0.30.0
 	google.golang.org/grpc v1.72.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.72.2
 	gopkg.in/macaroon.v2 v2.1.0
