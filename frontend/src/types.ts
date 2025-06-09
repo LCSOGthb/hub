@@ -299,6 +299,10 @@ export type PayInvoiceResponse = {
   fee: number;
 };
 
+export type CreateOfferRequest = {
+  description: string;
+};
+
 export type CreateInvoiceRequest = {
   amount: number;
   description: string;
@@ -473,21 +477,30 @@ export type Transaction = {
   updatedAt: string;
   createdAt: string;
   settledAt: string | undefined;
-  metadata?: {
-    comment?: string; // LUD-12
-    payer_data?: {
-      email?: string;
-      name?: string;
-      pubkey?: string;
-    }; // LUD-18
-    nostr?: {
-      pubkey: string;
-      tags: string[][];
-    }; // NIP-57
-  } & Record<string, unknown>;
+  metadata?: TransactionMetadata;
   boostagram?: Boostagram;
   failureReason: string;
 };
+
+export type TransactionMetadata = {
+  comment?: string; // LUD-12
+  payer_data?: {
+    email?: string;
+    name?: string;
+    pubkey?: string;
+  }; // LUD-18
+  recipient_data?: {
+    identifier?: string;
+  }; // LUD-18
+  nostr?: {
+    pubkey: string;
+    tags: string[][];
+  }; // NIP-57
+  offer?: {
+    id: string;
+    payer_note: string;
+  }; // BOLT-12
+} & Record<string, unknown>;
 
 export type Boostagram = {
   appName: string;
