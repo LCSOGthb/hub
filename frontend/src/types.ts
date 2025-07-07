@@ -162,6 +162,7 @@ export interface InfoResponse {
   autoUnlockPasswordEnabled: boolean;
   currency: string;
   nodeAlias: string;
+  mempoolUrl: string;
 }
 
 export type HealthAlarmKind =
@@ -337,6 +338,19 @@ export type OnchainBalanceResponse = {
   pendingBalancesFromChannelClosures: number;
   pendingBalancesDetails: PendingBalancesDetails[];
   pendingSweepBalancesDetails: PendingBalancesDetails[];
+};
+
+// from https://mempool.space/docs/api/rest#get-address-utxo
+export type MempoolUtxo = {
+  txid: string;
+  vout: number;
+  status: {
+    confirmed: boolean;
+    block_height?: number;
+    block_hash?: string;
+    block_time?: number;
+  };
+  value: number;
 };
 
 // from https://mempool.space/docs/api/rest#get-node-stats
