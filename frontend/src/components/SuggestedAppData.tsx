@@ -7,8 +7,10 @@ import bitrefill from "src/assets/suggested-apps/bitrefill.png";
 import btcpay from "src/assets/suggested-apps/btcpay.png";
 import buzzpay from "src/assets/suggested-apps/buzzpay.png";
 import clams from "src/assets/suggested-apps/clams.png";
+import claude from "src/assets/suggested-apps/claude.png";
 import coracle from "src/assets/suggested-apps/coracle.png";
 import damus from "src/assets/suggested-apps/damus.png";
+import goose from "src/assets/suggested-apps/goose.png";
 import hablanews from "src/assets/suggested-apps/habla-news.png";
 import lightningMessageboard from "src/assets/suggested-apps/lightning-messageboard.png";
 import lnbits from "src/assets/suggested-apps/lnbits.png";
@@ -78,6 +80,20 @@ export const suggestedApps: SuggestedApp[] = [
     description: "Receive-only PoS you can safely share with your employees",
     internal: true,
     logo: buzzpay,
+  },
+  {
+    id: "goose",
+    title: "Goose",
+    description: "Your local AI agent, automating engineering tasks seamlessly",
+    internal: true,
+    logo: goose,
+  },
+  {
+    id: "claude",
+    title: "Claude",
+    description: "AI assistant for conversations, analysis, and coding",
+    internal: true,
+    logo: claude,
   },
   {
     id: "simpleboost",

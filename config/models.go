@@ -36,6 +36,7 @@ type AppConfig struct {
 	LDKVssUrl                          string `envconfig:"LDK_VSS_URL" default:"https://vss.getalbypro.com/vss"`
 	LDKListeningAddresses              string `envconfig:"LDK_LISTENING_ADDRESSES" default:"0.0.0.0:9735,[::]:9735"`
 	LDKTransientNetworkGraph           bool   `envconfig:"LDK_TRANSIENT_NETWORK_GRAPH" default:"false"`
+	RebalanceServiceUrl                string `envconfig:"REBALANCE_SERVICE_URL" default:"https://megalithic.me"`
 	LDKBitcoindRpcHost                 string `envconfig:"LDK_BITCOIND_RPC_HOST"`
 	LDKBitcoindRpcPort                 string `envconfig:"LDK_BITCOIND_RPC_PORT"`
 	LDKBitcoindRpcUser                 string `envconfig:"LDK_BITCOIND_RPC_USER"`
@@ -45,7 +46,7 @@ type AppConfig struct {
 	AlbyClientSecret                   string `envconfig:"ALBY_OAUTH_CLIENT_SECRET" default:"rABK2n16IWjLTZ9M1uKU"`
 	BaseUrl                            string `envconfig:"BASE_URL"`
 	FrontendUrl                        string `envconfig:"FRONTEND_URL"`
-	LogEvents                          bool   `envconfig:"LOG_EVENTS" default:"true"`
+	SendEventsToAlby                   bool   `envconfig:"SEND_EVENTS_TO_ALBY" default:"true"`
 	AutoLinkAlbyAccount                bool   `envconfig:"AUTO_LINK_ALBY_ACCOUNT" default:"true"`
 	PhoenixdAddress                    string `envconfig:"PHOENIXD_ADDRESS"`
 	PhoenixdAuthorization              string `envconfig:"PHOENIXD_AUTHORIZATION"`
@@ -59,6 +60,14 @@ type AppConfig struct {
 
 func (c *AppConfig) IsDefaultClientId() bool {
 	return c.AlbyClientId == "J2PbXS1yOf"
+}
+
+func (c *AppConfig) GetBaseFrontendUrl() string {
+	url := c.FrontendUrl
+	if url == "" {
+		url = c.BaseUrl
+	}
+	return url
 }
 
 type Config interface {
