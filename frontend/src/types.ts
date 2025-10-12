@@ -449,12 +449,7 @@ export type LSPChannelOffer = {
   lspBalanceSat: number;
   feeTotalSat: number;
   feeTotalUsd: number;
-  currentPaymentMethod:
-    | "card"
-    | "wallet"
-    | "prepaid"
-    | "fee_credits"
-    | "included";
+  currentPaymentMethod: "card" | "wallet" | "prepaid" | "included";
   terms: string;
 };
 
@@ -476,7 +471,7 @@ export type RecommendedChannelPeer = {
   | {
       paymentMethod: "lightning";
       type: LSPType;
-      url: string;
+      identifier: string;
       contactUrl: string;
       terms?: string;
       pubkey?: string;
@@ -522,14 +517,10 @@ export type AlbyMe = {
   };
 };
 
-export type AlbyBalance = {
-  sats: number;
-};
-
 export type LSPOrderRequest = {
   amount: number;
   lspType: LSPType;
-  lspUrl: string;
+  lspIdentifier: string;
   public: boolean;
 };
 
@@ -663,7 +654,7 @@ export type OnchainOrder = {
 export type LightningOrder = {
   paymentMethod: "lightning";
   lspType: LSPType;
-  lspUrl: string;
+  lspIdentifier: string;
 } & NewChannelOrderCommon;
 
 export type NewChannelOrder = OnchainOrder | LightningOrder;

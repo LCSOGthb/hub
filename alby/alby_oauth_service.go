@@ -267,7 +267,7 @@ func (svc *albyOAuthService) GetVssAuthToken(ctx context.Context, nodeIdentifier
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/internal/auth_tokens", albyOAuthAPIURL), body)
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/internal/auth_tokens", albyOAuthAPIURL), body)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request for vss auth token endpoint")
 		return "", err
@@ -335,7 +335,7 @@ func (svc *albyOAuthService) CreateLightningAddress(ctx context.Context, address
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/internal/lightning_addresses", albyOAuthAPIURL), body)
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/internal/lightning_addresses", albyOAuthAPIURL), body)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request for vss auth token endpoint")
 		return nil, err
@@ -398,7 +398,7 @@ func (svc *albyOAuthService) DeleteLightningAddress(ctx context.Context, address
 	client := svc.oauthConf.Client(ctx, token)
 	client.Timeout = 10 * time.Second
 
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/internal/lightning_addresses/%s", albyOAuthAPIURL, address), nil)
+	req, err := http.NewRequestWithContext(ctx, "DELETE", fmt.Sprintf("%s/internal/lightning_addresses/%s", albyOAuthAPIURL, address), nil)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request for delete lightning address endpoint")
 		return err
@@ -435,7 +435,7 @@ func (svc *albyOAuthService) GetMe(ctx context.Context) (*AlbyMe, error) {
 	client := svc.oauthConf.Client(ctx, token)
 	client.Timeout = 10 * time.Second
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/internal/users", albyOAuthAPIURL), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/internal/users", albyOAuthAPIURL), nil)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request /me")
 		return nil, err
@@ -477,141 +477,6 @@ func (svc *albyOAuthService) GetMe(ctx context.Context) (*AlbyMe, error) {
 
 	logger.Logger.WithFields(logrus.Fields{"me": me}).Info("Alby me response")
 	return me, nil
-}
-
-func (svc *albyOAuthService) GetBalance(ctx context.Context) (*AlbyBalance, error) {
-
-	token, err := svc.fetchUserToken(ctx)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to fetch user token")
-		return nil, err
-	}
-
-	client := svc.oauthConf.Client(ctx, token)
-	client.Timeout = 10 * time.Second
-
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/internal/lndhub/balance", albyOAuthAPIURL), nil)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Error creating request to balance endpoint")
-		return nil, err
-	}
-
-	setDefaultRequestHeaders(req)
-
-	res, err := client.Do(req)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to fetch balance endpoint")
-		return nil, err
-	}
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to read response body")
-		return nil, errors.New("failed to read response body")
-	}
-
-	if res.StatusCode >= 300 {
-		logger.Logger.WithFields(logrus.Fields{
-			"body":        string(body),
-			"status_code": res.StatusCode,
-		}).Error("balance endpoint returned non-success code")
-		return nil, fmt.Errorf("balance endpoint returned non-success code: %s", string(body))
-	}
-
-	balance := &AlbyBalance{}
-	err = json.Unmarshal(body, balance)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to decode API response")
-		return nil, err
-	}
-
-	logger.Logger.WithFields(logrus.Fields{"balance": balance}).Debug("Alby balance response")
-	return balance, nil
-}
-
-func (svc *albyOAuthService) SendPayment(ctx context.Context, invoice string) error {
-	token, err := svc.fetchUserToken(ctx)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to fetch user token")
-		return err
-	}
-
-	client := svc.oauthConf.Client(ctx, token)
-	client.Timeout = 10 * time.Second
-
-	type payRequest struct {
-		Invoice string `json:"invoice"`
-	}
-
-	body := bytes.NewBuffer([]byte{})
-	payload := payRequest{
-		Invoice: invoice,
-	}
-	err = json.NewEncoder(body).Encode(&payload)
-
-	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to encode request payload")
-		return err
-	}
-
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/internal/lndhub/bolt11", albyOAuthAPIURL), body)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Error creating request bolt11 endpoint")
-		return err
-	}
-
-	setDefaultRequestHeaders(req)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		logger.Logger.WithFields(logrus.Fields{
-			"invoice": invoice,
-		}).WithError(err).Error("Failed to pay invoice")
-		return err
-	}
-
-	type PayResponse struct {
-		Preimage    string `json:"payment_preimage"`
-		PaymentHash string `json:"payment_hash"`
-	}
-
-	if resp.StatusCode >= 300 {
-
-		type ErrorResponse struct {
-			Error   bool   `json:"error"`
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		}
-
-		errorPayload := &ErrorResponse{}
-		err = json.NewDecoder(resp.Body).Decode(errorPayload)
-		if err != nil {
-			logger.Logger.WithFields(logrus.Fields{
-				"status": resp.StatusCode,
-			}).WithError(err).Error("Failed to decode payment error response payload")
-			return err
-		}
-
-		logger.Logger.WithFields(logrus.Fields{
-			"invoice": invoice,
-			"status":  resp.StatusCode,
-			"message": errorPayload.Message,
-		}).Error("Payment failed")
-		return errors.New(errorPayload.Message)
-	}
-
-	responsePayload := &PayResponse{}
-	err = json.NewDecoder(resp.Body).Decode(responsePayload)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to decode response payload")
-		return err
-	}
-	logger.Logger.WithFields(logrus.Fields{
-		"invoice":     invoice,
-		"paymentHash": responsePayload.PaymentHash,
-		"preimage":    responsePayload.Preimage,
-	}).Info("Alby Payment successful")
-	return nil
 }
 
 func (svc *albyOAuthService) GetAuthUrl() string {
@@ -854,7 +719,7 @@ func (svc *albyOAuthService) ConsumeEvent(ctx context.Context, event *events.Eve
 		return
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/events", albyOAuthAPIURL), body)
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/events", albyOAuthAPIURL), body)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request /events")
 		return
@@ -937,7 +802,7 @@ func (svc *albyOAuthService) backupChannels(ctx context.Context, event *events.E
 		return fmt.Errorf("failed to encode channels backup request payload: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/internal/backups", albyOAuthAPIURL), body)
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/internal/backups", albyOAuthAPIURL), body)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -978,7 +843,7 @@ func (svc *albyOAuthService) createAlbyAccountNWCNode(ctx context.Context) (stri
 		return "", err
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/internal/nwcs", albyOAuthAPIURL), body)
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/internal/nwcs", albyOAuthAPIURL), body)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request /internal/nwcs")
 		return "", err
@@ -1026,7 +891,7 @@ func (svc *albyOAuthService) destroyAlbyAccountNWCNode(ctx context.Context) erro
 	client := svc.oauthConf.Client(ctx, token)
 	client.Timeout = 10 * time.Second
 
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/internal/nwcs", albyOAuthAPIURL), nil)
+	req, err := http.NewRequestWithContext(ctx, "DELETE", fmt.Sprintf("%s/internal/nwcs", albyOAuthAPIURL), nil)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request /internal/nwcs")
 		return err
@@ -1077,7 +942,7 @@ func (svc *albyOAuthService) activateAlbyAccountNWCNode(ctx context.Context, wal
 		return err
 	}
 
-	req, err := http.NewRequest("PUT", fmt.Sprintf("%s/internal/nwcs/activate", albyOAuthAPIURL), body)
+	req, err := http.NewRequestWithContext(ctx, "PUT", fmt.Sprintf("%s/internal/nwcs/activate", albyOAuthAPIURL), body)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request /internal/nwcs/activate")
 		return err
@@ -1128,7 +993,7 @@ func (svc *albyOAuthService) GetLSPChannelOffer(ctx context.Context) (*LSPChanne
 	client := svc.oauthConf.Client(ctx, token)
 	client.Timeout = 10 * time.Second
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/internal/lsp", albyOAuthAPIURL), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/internal/lsp", albyOAuthAPIURL), nil)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Error creating request /me")
 		return nil, err
@@ -1152,8 +1017,8 @@ func (svc *albyOAuthService) GetLSPChannelOffer(ctx context.Context) (*LSPChanne
 		logger.Logger.WithFields(logrus.Fields{
 			"body":        string(body),
 			"status_code": res.StatusCode,
-		}).Error("users endpoint returned non-success code")
-		return nil, fmt.Errorf("users endpoint returned non-success code: %s", string(body))
+		}).Error("lsp channel offer endpoint returned non-success code")
+		return nil, fmt.Errorf("lsp channel offer endpoint returned non-success code: %s", string(body))
 	}
 
 	lspChannelOffer := &LSPChannelOffer{}
@@ -1166,6 +1031,157 @@ func (svc *albyOAuthService) GetLSPChannelOffer(ctx context.Context) (*LSPChanne
 	return lspChannelOffer, nil
 }
 
+func (svc *albyOAuthService) GetLSPInfo(ctx context.Context, lspIdentifier, network string) (*LSPInfo, error) {
+	token, err := svc.fetchUserToken(ctx)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to fetch user token")
+		return nil, err
+	}
+
+	var client *http.Client
+	if token != nil {
+		client = svc.oauthConf.Client(ctx, token)
+	} else {
+		client = &http.Client{}
+	}
+	client.Timeout = 30 * time.Second
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/internal/lsp/%s/%s/v1/get_info", albyOAuthAPIURL, lspIdentifier, network), nil)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to create lsp info request")
+		return nil, err
+	}
+
+	setDefaultRequestHeaders(req)
+
+	res, err := client.Do(req)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to request lsp info")
+		return nil, err
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to read response body")
+		return nil, errors.New("failed to read response body")
+	}
+
+	if res.StatusCode >= 300 {
+		logger.Logger.WithFields(logrus.Fields{
+			"body":        string(body),
+			"status_code": res.StatusCode,
+		}).Error("lsp info endpoint returned non-success code")
+		return nil, fmt.Errorf("lsp info endpoint returned non-success code: %s", string(body))
+	}
+
+	type lsps1LSPInfo struct {
+		MinRequiredChannelConfirmations uint64   `json:"min_required_channel_confirmations"`
+		MinFundingConfirmsWithinBlocks  uint64   `json:"min_funding_confirms_within_blocks"`
+		MaxChannelExpiryBlocks          uint64   `json:"max_channel_expiry_blocks"`
+		URIs                            []string `json:"uris"`
+	}
+
+	lsps1LspInfo := &lsps1LSPInfo{}
+	err = json.Unmarshal(body, lsps1LspInfo)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to decode API response")
+		return nil, err
+	}
+
+	httpUris := utils.Filter(lsps1LspInfo.URIs, func(uri string) bool {
+		return !strings.Contains(uri, ".onion")
+	})
+	if len(httpUris) == 0 {
+		logger.Logger.WithField("uris", lsps1LspInfo.URIs).WithError(err).Error("Couldn't find HTTP URI")
+		return nil, err
+	}
+	uri := httpUris[0]
+
+	// make sure it's a valid IPv4 URI
+	regex := regexp.MustCompile(`^([0-9a-f]+)@([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):([0-9]+)$`)
+	parts := regex.FindStringSubmatch(uri)
+	logger.Logger.WithField("parts", parts).Info("Split URI")
+	if parts == nil || len(parts) != 4 {
+		logger.Logger.WithField("parts", parts).Error("Unsupported URI")
+		return nil, errors.New("could not decode LSP URI")
+	}
+
+	port, err := strconv.Atoi(parts[3])
+	if err != nil {
+		logger.Logger.WithField("port", parts[3]).WithError(err).Error("Failed to decode port number")
+
+		return nil, err
+	}
+
+	return &LSPInfo{
+		Pubkey:                          parts[1],
+		Address:                         parts[2],
+		Port:                            uint16(port),
+		MaxChannelExpiryBlocks:          lsps1LspInfo.MaxChannelExpiryBlocks,
+		MinRequiredChannelConfirmations: lsps1LspInfo.MinRequiredChannelConfirmations,
+		MinFundingConfirmsWithinBlocks:  lsps1LspInfo.MinFundingConfirmsWithinBlocks,
+	}, nil
+}
+
+func (svc *albyOAuthService) CreateLSPOrder(ctx context.Context, lsp, network string, lspChannelRequest *LSPChannelRequest) (*LSPChannelResponse, error) {
+	token, err := svc.fetchUserToken(ctx)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to fetch user token")
+		return nil, err
+	}
+
+	var client *http.Client
+	if token != nil {
+		client = svc.oauthConf.Client(ctx, token)
+	} else {
+		client = &http.Client{}
+	}
+	client.Timeout = 30 * time.Second
+
+	payloadBytes, err := json.Marshal(lspChannelRequest)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader := bytes.NewReader(payloadBytes)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/internal/lsp/%s/%s/v1/create_order", albyOAuthAPIURL, lsp, network), bodyReader)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to create lsp order request")
+		return nil, err
+	}
+
+	setDefaultRequestHeaders(req)
+
+	res, err := client.Do(req)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to request lsp order")
+		return nil, err
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to read response body")
+		return nil, errors.New("failed to read response body")
+	}
+
+	if res.StatusCode >= 300 {
+		logger.Logger.WithFields(logrus.Fields{
+			"body":        string(body),
+			"status_code": res.StatusCode,
+		}).Error("lsp create order endpoint returned non-success code")
+		return nil, fmt.Errorf("lsp create order endpoint returned non-success code: %s", string(body))
+	}
+
+	channelResponse := &LSPChannelResponse{}
+	err = json.Unmarshal(body, channelResponse)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to decode API response")
+		return nil, err
+	}
+
+	return channelResponse, nil
+}
+
 func (svc *albyOAuthService) RequestAutoChannel(ctx context.Context, lnClient lnclient.LNClient, isPublic bool) (*AutoChannelResponse, error) {
 	nodeInfo, err := lnClient.GetInfo(ctx)
 	if err != nil {
@@ -1173,9 +1189,7 @@ func (svc *albyOAuthService) RequestAutoChannel(ctx context.Context, lnClient ln
 		return nil, err
 	}
 
-	requestUrl := fmt.Sprintf("https://api.getalby.com/internal/lsp/alby/%s", nodeInfo.Network)
-
-	pubkey, address, port, err := svc.getLSPInfo(ctx, requestUrl+"/v1/get_info")
+	lspInfo, err := svc.GetLSPInfo(ctx, "alby", nodeInfo.Network)
 
 	if err != nil {
 		logger.Logger.WithError(err).Error("Failed to request LSP info")
@@ -1183,26 +1197,26 @@ func (svc *albyOAuthService) RequestAutoChannel(ctx context.Context, lnClient ln
 	}
 
 	err = lnClient.ConnectPeer(ctx, &lnclient.ConnectPeerRequest{
-		Pubkey:  pubkey,
-		Address: address,
-		Port:    port,
+		Pubkey:  lspInfo.Pubkey,
+		Address: lspInfo.Address,
+		Port:    lspInfo.Port,
 	})
 
 	if err != nil {
 		logger.Logger.WithFields(logrus.Fields{
-			"pubkey":  pubkey,
-			"address": address,
-			"port":    port,
+			"pubkey":  lspInfo.Pubkey,
+			"address": lspInfo.Address,
+			"port":    lspInfo.Port,
 		}).WithError(err).Error("Failed to connect to peer")
 		return nil, err
 	}
 
 	logger.Logger.WithFields(logrus.Fields{
-		"pubkey": pubkey,
+		"pubkey": lspInfo.Pubkey,
 		"public": isPublic,
 	}).Info("Requesting auto channel")
 
-	autoChannelResponse, err := svc.requestAutoChannel(ctx, requestUrl+"/auto_channel", nodeInfo.Pubkey, isPublic)
+	autoChannelResponse, err := svc.requestAutoChannel(ctx, fmt.Sprintf("%s/internal/lsp/alby/%s/auto_channel", albyOAuthAPIURL, nodeInfo.Network), nodeInfo.Pubkey, isPublic)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Failed to request auto channel")
 		return nil, err
@@ -1241,7 +1255,7 @@ func (svc *albyOAuthService) requestAutoChannel(ctx context.Context, url string,
 	}
 	bodyReader := bytes.NewReader(payloadBytes)
 
-	req, err := http.NewRequest(http.MethodPost, url, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bodyReader)
 	if err != nil {
 		logger.Logger.WithError(err).WithFields(logrus.Fields{
 			"url": url,
@@ -1343,86 +1357,6 @@ func (svc *albyOAuthService) requestAutoChannel(ctx context.Context, url string,
 		Fee:         fee,
 		ChannelSize: channelSize,
 	}, nil
-}
-
-func (svc *albyOAuthService) getLSPInfo(ctx context.Context, url string) (pubkey string, address string, port uint16, err error) {
-
-	token, err := svc.fetchUserToken(ctx)
-	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to fetch user token")
-	}
-
-	client := svc.oauthConf.Client(ctx, token)
-	client.Timeout = 60 * time.Second
-
-	type lsps1LSPInfo struct {
-		URIs []string `json:"uris"`
-	}
-	var lsps1LspInfo lsps1LSPInfo
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		logger.Logger.WithError(err).WithFields(logrus.Fields{
-			"url": url,
-		}).Error("Failed to create lsp info request")
-		return "", "", uint16(0), err
-	}
-
-	setDefaultRequestHeaders(req)
-
-	res, err := client.Do(req)
-	if err != nil {
-		logger.Logger.WithError(err).WithFields(logrus.Fields{
-			"url": url,
-		}).Error("Failed to request lsp info")
-		return "", "", uint16(0), err
-	}
-
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		logger.Logger.WithError(err).WithFields(logrus.Fields{
-			"url": url,
-		}).Error("Failed to read response body")
-		return "", "", uint16(0), errors.New("failed to read response body")
-	}
-
-	err = json.Unmarshal(body, &lsps1LspInfo)
-	if err != nil {
-		logger.Logger.WithError(err).WithFields(logrus.Fields{
-			"url": url,
-		}).Error("Failed to deserialize json")
-		return "", "", uint16(0), fmt.Errorf("failed to deserialize json %s %s", url, string(body))
-	}
-
-	httpUris := utils.Filter(lsps1LspInfo.URIs, func(uri string) bool {
-		return !strings.Contains(uri, ".onion")
-	})
-	if len(httpUris) == 0 {
-		logger.Logger.WithField("uris", lsps1LspInfo.URIs).WithError(err).Error("Couldn't find HTTP URI")
-
-		return "", "", uint16(0), err
-	}
-	uri := httpUris[0]
-
-	// make sure it's a valid IPv4 URI
-	regex := regexp.MustCompile(`^([0-9a-f]+)@([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+):([0-9]+)$`)
-	parts := regex.FindStringSubmatch(uri)
-	logger.Logger.WithField("parts", parts).Debug("Split URI")
-	if parts == nil || len(parts) != 4 {
-		logger.Logger.WithField("parts", parts).Error("Unsupported URI")
-		return "", "", uint16(0), errors.New("could not decode LSP URI")
-	}
-
-	portValue, err := strconv.Atoi(parts[3])
-	if err != nil {
-		logger.Logger.WithField("port", parts[3]).WithError(err).Error("Failed to decode port number")
-
-		return "", "", uint16(0), err
-	}
-
-	return parts[1], parts[2], uint16(portValue), nil
 }
 
 func setDefaultRequestHeaders(req *http.Request) {

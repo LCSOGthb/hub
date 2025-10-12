@@ -4,6 +4,7 @@ import {
   CircleHelpIcon,
   CircleXIcon,
   CopyIcon,
+  ExternalLinkIcon,
   ZapIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -19,9 +20,11 @@ import { Button } from "src/components/ui/button";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "src/components/ui/card";
+import { ExternalLinkButton } from "src/components/ui/custom/external-link-button";
 import { LoadingButton } from "src/components/ui/custom/loading-button";
 import {
   Tooltip,
@@ -76,6 +79,10 @@ export default function SwapInStatus() {
 
   const copyAddress = () => {
     copyToClipboard(swap.lockupAddress);
+  };
+
+  const copyAmount = () => {
+    copyToClipboard(swap.sendAmount.toString());
   };
 
   async function payWithAlbyHub() {
@@ -134,6 +141,15 @@ export default function SwapInStatus() {
               {swapStatus === "PENDING" && <Loading className="w-4 h-4 mr-2" />}
               {statusText[swapStatus]}
             </CardTitle>
+            <CardDescription className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
+              Swap ID: {swap.id}{" "}
+              <CopyIcon
+                className="cursor-pointer text-muted-foreground size-4"
+                onClick={() => {
+                  copyToClipboard(swap.id);
+                }}
+              />
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
             {swapStatus === "SUCCESS" ? (
@@ -162,12 +178,20 @@ export default function SwapInStatus() {
                   (swap.lockupTxId ? (
                     <LottieLoading />
                   ) : (
-                    <QRCode value={swap.lockupAddress} />
+                    <QRCode
+                      value={`bitcoin:${swap.lockupAddress}?amount=${swap.sendAmount / 100_000_000}`}
+                    />
                   ))}
                 <div className="flex flex-col gap-2 items-center">
-                  <p className="text-xl font-bold slashed-zero text-center">
-                    {new Intl.NumberFormat().format(swap.sendAmount)} sats
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xl font-bold slashed-zero text-center">
+                      {new Intl.NumberFormat().format(swap.sendAmount)} sats
+                    </p>
+                    <CopyIcon
+                      className="cursor-pointer text-muted-foreground size-4 shrink-0"
+                      onClick={copyAmount}
+                    />
+                  </div>
                   <FormattedFiatAmount amount={swap.sendAmount} />
                 </div>
                 {!swap.lockupTxId && (
@@ -180,8 +204,7 @@ export default function SwapInStatus() {
                     )}
                     {swap.state === "PENDING" &&
                       balances &&
-                      balances.onchain.spendable - 25000 /* anchor reserve */ >
-                        swap.sendAmount && (
+                      balances.onchain.spendable > swap.sendAmount && (
                         <LoadingButton
                           loading={isPaying}
                           onClick={payWithAlbyHub}
@@ -191,6 +214,15 @@ export default function SwapInStatus() {
                           Use Hub On-Chain Funds
                         </LoadingButton>
                       )}
+                    {swap.state === "PENDING" && (
+                      <ExternalLinkButton
+                        to={`bitcoin:${swap.lockupAddress}?amount=${swap.sendAmount / 100_000_000}`}
+                        variant="secondary"
+                      >
+                        Open in External Wallet
+                        <ExternalLinkIcon />
+                      </ExternalLinkButton>
+                    )}
                   </div>
                 )}
               </>
@@ -225,7 +257,7 @@ export default function SwapInStatus() {
                     <div className="flex items-center text-muted-foreground text-sm">
                       <Loading className="w-5 h-5 mr-2" />
                       <div className="flex items-center gap-2">
-                        <p>Waiting for confirmation...</p>
+                        <p>Waiting for 1 on-chain confirmation...</p>
                         <ExternalLink
                           to={`${info?.mempoolUrl}/tx/${swap.lockupTxId}`}
                           className="flex items-center underline text-foreground"

@@ -1,7 +1,8 @@
 import { ClipboardPasteIcon, MoveRightIcon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { AnchorReserveAlert } from "src/components/AnchorReserveAlert";
 import AppHeader from "src/components/AppHeader";
 import Loading from "src/components/Loading";
 import LowReceivingCapacityAlert from "src/components/LowReceivingCapacityAlert";
@@ -11,30 +12,36 @@ import { LoadingButton } from "src/components/ui/custom/loading-button";
 import { Input } from "src/components/ui/input";
 import { Label } from "src/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "src/components/ui/radio-group";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "src/components/ui/tabs";
 import { useBalances } from "src/hooks/useBalances";
 import { useInfo } from "src/hooks/useInfo";
 import { useSwapInfo } from "src/hooks/useSwaps";
-import { cn } from "src/lib/utils";
 import { SwapResponse } from "src/types";
 import { request } from "src/utils/request";
 
 export default function Swap() {
-  const [swapType, setSwapType] = useState("in");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState(searchParams.get("type") || "in");
 
   useEffect(() => {
-    const queryParams = new URLSearchParams(location.search);
-    const swapType = queryParams.get("type");
-    if (swapType) {
-      setSwapType(swapType);
+    const newTabValue = searchParams.get("type");
+    if (newTabValue) {
+      setTab(newTabValue);
+      setSearchParams({});
     }
-  }, []);
+  }, [searchParams, setSearchParams]);
 
   return (
     <div className="grid gap-5">
       <AppHeader
         title="Swap"
         contentRight={
-          swapType === "out" && (
+          tab === "out" && (
             <Link to="/wallet/swap/auto">
               <ResponsiveButton
                 variant="outline"
@@ -45,29 +52,22 @@ export default function Swap() {
           )
         }
       />
-      <div className="w-full max-w-lg">
-        <div className="flex items-center text-center text-foreground font-medium rounded-xl bg-muted p-1">
-          <div
-            className={cn(
-              "cursor-pointer rounded-lg flex-1 py-1.5 text-sm",
-              swapType == "in" && "text-foreground bg-background shadow-md"
-            )}
-            onClick={() => setSwapType("in")}
-          >
+      <Tabs value={tab} onValueChange={setTab} className="w-full max-w-lg">
+        <TabsList className="w-full mb-4">
+          <TabsTrigger value="in" className="flex gap-2 items-center w-full">
             Swap In
-          </div>
-          <div
-            className={cn(
-              "cursor-pointer rounded-lg flex-1 py-1.5 text-sm",
-              swapType == "out" && "text-foreground bg-background shadow-md"
-            )}
-            onClick={() => setSwapType("out")}
-          >
+          </TabsTrigger>
+          <TabsTrigger value="out" className="flex gap-2 items-center w-full">
             Swap Out
-          </div>
-        </div>
-        {swapType == "in" ? <SwapInForm /> : <SwapOutForm />}
-      </div>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="in">
+          <SwapInForm />
+        </TabsContent>
+        <TabsContent value="out">
+          <SwapOutForm />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -115,13 +115,13 @@ function SwapInForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
-      <div className="mt-6">
+      <div>
         {hasChannelManagement &&
           parseInt(swapAmount || "0") * 1000 >=
             0.8 * balances.lightning.totalReceivable && (
             <LowReceivingCapacityAlert />
           )}
-        <h2 className="mt-4 font-medium text-foreground flex items-center gap-1">
+        <h2 className="font-medium text-foreground flex items-center gap-1">
           On-chain <MoveRightIcon /> Lightning
         </h2>
         <p className="mt-1 text-muted-foreground">
@@ -129,6 +129,9 @@ function SwapInForm() {
         </p>
       </div>
       <div className="grid gap-1.5">
+        {hasChannelManagement && (
+          <AnchorReserveAlert amount={+swapAmount} className="mb-4" isSwap />
+        )}
         <Label>Swap amount</Label>
         <Input
           type="number"
@@ -239,7 +242,7 @@ function SwapOutForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6">
-      <div className="mt-6">
+      <div>
         <h2 className="font-medium text-foreground flex items-center gap-1">
           Lightning <MoveRightIcon /> On-chain
         </h2>

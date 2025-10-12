@@ -37,8 +37,9 @@ func (svc *service) startNostr(ctx context.Context) error {
 	}
 
 	logger.Logger.WithFields(logrus.Fields{
-		"npub": npub,
-		"hex":  svc.keys.GetNostrPublicKey(),
+		"npub":    npub,
+		"hex":     svc.keys.GetNostrPublicKey(),
+		"version": version.Tag,
 	}).Info("Starting Alby Hub")
 	svc.wg.Add(1)
 	go func() {
@@ -359,7 +360,7 @@ func (svc *service) launchLNBackend(ctx context.Context, encryptionKey string) e
 		PhoenixdAddress, _ := svc.cfg.Get("PhoenixdAddress", encryptionKey)
 		PhoenixdAuthorization, _ := svc.cfg.Get("PhoenixdAuthorization", encryptionKey)
 
-		lnClient, err = phoenixd.NewPhoenixService(PhoenixdAddress, PhoenixdAuthorization)
+		lnClient, err = phoenixd.NewPhoenixService(ctx, PhoenixdAddress, PhoenixdAuthorization)
 	case config.CashuBackendType:
 		mnemonic, _ := svc.cfg.Get("Mnemonic", encryptionKey)
 		cashuMintUrl, _ := svc.cfg.Get("CashuMintUrl", encryptionKey)

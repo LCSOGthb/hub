@@ -47,7 +47,7 @@ type API interface {
 	SendPayment(ctx context.Context, invoice string, amountMsat *uint64, metadata map[string]interface{}) (*SendPaymentResponse, error)
 	CreateInvoice(ctx context.Context, amount uint64, description string) (*MakeInvoiceResponse, error)
 	LookupInvoice(ctx context.Context, paymentHash string) (*LookupInvoiceResponse, error)
-	RequestMempoolApi(endpoint string) (interface{}, error)
+	RequestMempoolApi(ctx context.Context, endpoint string) (interface{}, error)
 	GetInfo(ctx context.Context) (*InfoResponse, error)
 	GetMnemonic(unlockPassword string) (*MnemonicResponse, error)
 	SetNextBackupReminder(backupReminderRequest *BackupReminderRequest) error
@@ -150,9 +150,8 @@ type CreateLightningAddressRequest struct {
 }
 
 type InitiateSwapRequest struct {
-	SwapAmount            uint64 `json:"swapAmount"`
-	Destination           string `json:"destination"`
-	UseExactReceiveAmount bool   `json:"useExactReceiveAmount"`
+	SwapAmount  uint64 `json:"swapAmount"`
+	Destination string `json:"destination"`
 }
 
 type RefundSwapRequest struct {
@@ -215,6 +214,7 @@ type StartRequest struct {
 type UnlockRequest struct {
 	UnlockPassword  string  `json:"unlockPassword"`
 	TokenExpiryDays *uint64 `json:"tokenExpiryDays"`
+	Permission      string  `json:"permission,omitempty"` // "full" or "readonly"
 }
 
 type BackupReminderRequest struct {
@@ -459,10 +459,10 @@ type BasicRestoreWailsRequest struct {
 type NetworkGraphResponse = lnclient.NetworkGraphResponse
 
 type LSPOrderRequest struct {
-	Amount  uint64 `json:"amount"`
-	LSPType string `json:"lspType"`
-	LSPUrl  string `json:"lspUrl"`
-	Public  bool   `json:"public"`
+	Amount        uint64 `json:"amount"`
+	LSPType       string `json:"lspType"`
+	LSPIdentifier string `json:"lspIdentifier"`
+	Public        bool   `json:"public"`
 }
 
 type LSPOrderResponse struct {
