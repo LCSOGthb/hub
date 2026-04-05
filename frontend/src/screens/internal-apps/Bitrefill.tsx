@@ -2,6 +2,7 @@ import { Invoice } from "@getalby/lightning-tools";
 import React, { useEffect } from "react";
 import { toast } from "sonner";
 import AppHeader from "src/components/AppHeader";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import FormattedFiatAmount from "src/components/FormattedFiatAmount";
 import Loading from "src/components/Loading";
 import {
@@ -33,7 +34,7 @@ export function Bitrefill() {
             const invoice = new Invoice({ pr: parsedData.paymentAddress });
             setInvoice(invoice);
           }
-        } catch (e) {
+        } catch {
           /* empty */
         }
       }
@@ -85,6 +86,7 @@ export function Bitrefill() {
     <>
       <div className="flex flex-col gap-5 h-full">
         <AppHeader
+          pageTitle="Bitrefill"
           title="Bitrefill"
           description="Live on bitcoin by purchasing digital gift cards, eSIMs, and phone refills"
         />
@@ -109,7 +111,9 @@ export function Bitrefill() {
               <div className="font-medium">Amount</div>
               <div className="flex flex-row gap-2 items-center">
                 <span className="font-medium slashed-zero">
-                  {new Intl.NumberFormat().format(invoice?.satoshi || 0)} sats
+                  <FormattedBitcoinAmount
+                    amount={(invoice?.satoshi || 0) * 1000}
+                  />
                 </span>
                 <FormattedFiatAmount
                   className="text-muted-foreground"

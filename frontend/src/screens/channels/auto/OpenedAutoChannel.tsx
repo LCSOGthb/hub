@@ -1,13 +1,13 @@
-import { Link } from "react-router-dom";
 import ExternalLink from "src/components/ExternalLink";
 import TwoColumnLayoutHeader from "src/components/TwoColumnLayoutHeader";
-import { Button } from "src/components/ui/button";
+import { LinkButton } from "src/components/ui/custom/link-button";
 
 export function OpenedAutoChannel() {
   return (
     <div className="flex flex-col justify-center gap-5 p-5 max-w-md items-stretch">
       <TwoColumnLayoutHeader
         title="Channel Opened"
+        pageTitle="Channel Opened"
         description="Your new lightning channel is ready to use"
       />
 
@@ -26,9 +26,9 @@ export function OpenedAutoChannel() {
         .
       </p>
 
-      <Link to="/wallet" className="flex justify-center mt-8">
-        <Button>Go To Your Wallet</Button>
-      </Link>
+      <LinkButton to="/wallet" className="flex justify-center mt-8">
+        Go To Your Wallet
+      </LinkButton>
     </div>
   );
 }

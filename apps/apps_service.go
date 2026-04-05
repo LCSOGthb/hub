@@ -26,6 +26,7 @@ type AppsService interface {
 	GetAppByPubkey(pubkey string) *db.App
 	GetAppById(id uint) *db.App
 	SetAppMetadata(appId uint, metadata map[string]interface{}) error
+	HasLightningAddress(app *db.App) bool
 }
 
 type appsService struct {
@@ -72,15 +73,19 @@ func (svc *appsService) CreateApp(name string, pubkey string, maxAmountSat uint6
 	}
 
 	// ensure there is at least one scope
-	if scopes == nil || len(scopes) == 0 {
+	if len(scopes) == 0 {
 		return nil, "", errors.New("no scopes provided")
 	}
 
 	var pairingPublicKey string
 	var pairingSecretKey string
+	var err error
 	if pubkey == "" {
 		pairingSecretKey = nostr.GeneratePrivateKey()
-		pairingPublicKey, _ = nostr.GetPublicKey(pairingSecretKey)
+		pairingPublicKey, err = nostr.GetPublicKey(pairingSecretKey)
+		if err != nil {
+			return nil, "", err
+		}
 	} else {
 		pairingPublicKey = pubkey
 		//validate public key
@@ -117,7 +122,7 @@ func (svc *appsService) CreateApp(name string, pubkey string, maxAmountSat uint6
 
 	app := db.App{Name: freeName, AppPubkey: pairingPublicKey, Isolated: isolated, Metadata: datatypes.JSON(metadataBytes)}
 
-	err := svc.db.Transaction(func(tx *gorm.DB) error {
+	err = svc.db.Transaction(func(tx *gorm.DB) error {
 		err := tx.Save(&app).Error
 		if err != nil {
 			return err
@@ -231,4 +236,19 @@ func (svc *appsService) SetAppMetadata(id uint, metadata map[string]interface{})
 	}
 
 	return nil
+}
+
+func (svc *appsService) HasLightningAddress(app *db.App) bool {
+	if app.Metadata == nil {
+		return false
+	}
+
+	var metadata map[string]interface{}
+	err := json.Unmarshal(app.Metadata, &metadata)
+	if err != nil {
+		return false
+	}
+
+	lud16, exists := metadata["lud16"]
+	return exists && lud16 != nil
 }

@@ -1,6 +1,6 @@
 import {
   AlertTriangleIcon,
-  ChevronDown,
+  ChevronDownIcon,
   CopyIcon,
   ExternalLinkIcon,
   InfoIcon,
@@ -10,6 +10,8 @@ import { toast } from "sonner";
 import { AnchorReserveAlert } from "src/components/AnchorReserveAlert";
 import AppHeader from "src/components/AppHeader";
 import ExternalLink from "src/components/ExternalLink";
+import { FixedFloatButton } from "src/components/FixedFloatButton";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import Loading from "src/components/Loading";
 import { MempoolAlert } from "src/components/MempoolAlert";
 import { Alert, AlertDescription, AlertTitle } from "src/components/ui/alert";
@@ -27,6 +29,7 @@ import { Checkbox } from "src/components/ui/checkbox";
 import { LoadingButton } from "src/components/ui/custom/loading-button";
 import { Input } from "src/components/ui/input";
 import { Label } from "src/components/ui/label";
+import { Separator } from "src/components/ui/separator";
 import { ONCHAIN_DUST_SATS } from "src/constants";
 import { useBalances } from "src/hooks/useBalances";
 import { useInfo } from "src/hooks/useInfo";
@@ -37,7 +40,6 @@ import { RedeemOnchainFundsResponse } from "src/types";
 import { request } from "src/utils/request";
 
 export default function WithdrawOnchainFunds() {
-  const [isLoading, setLoading] = React.useState(false);
   const { data: info } = useInfo();
   const { data: balances } = useBalances();
   const { data: recommendedFees, error: mempoolError } = useMempoolApi<{
@@ -46,6 +48,7 @@ export default function WithdrawOnchainFunds() {
     economyFee: number;
     minimumFee: number;
   }>("/v1/fees/recommended");
+  const [isLoading, setLoading] = React.useState(false);
   const [onchainAddress, setOnchainAddress] = React.useState("");
   const [amount, setAmount] = React.useState("");
   const [feeRate, setFeeRate] = React.useState("");
@@ -122,6 +125,7 @@ export default function WithdrawOnchainFunds() {
     return (
       <div className="grid gap-5">
         <AppHeader
+          pageTitle="Withdrawal Transaction Broadcasted"
           title="Withdrawal Transaction Broadcasted"
           description={
             "You will receive the funds at the destination after the transaction is confirmed"
@@ -164,6 +168,7 @@ export default function WithdrawOnchainFunds() {
   return (
     <div className="grid gap-5">
       <AppHeader
+        pageTitle="Withdraw On-Chain Balance"
         title="Withdraw On-Chain Balance"
         description="Withdraw your onchain funds to another bitcoin wallet"
       />
@@ -186,8 +191,9 @@ export default function WithdrawOnchainFunds() {
               <div className="flex justify-between items-center">
                 <p className="text-sm text-muted-foreground sensitive slashed-zero">
                   Current onchain balance:{" "}
-                  {new Intl.NumberFormat().format(balances.onchain.spendable)}{" "}
-                  sats
+                  <FormattedBitcoinAmount
+                    amount={balances.onchain.spendable * 1000}
+                  />
                 </p>
                 <div className="flex items-center gap-1">
                   <Checkbox
@@ -306,7 +312,7 @@ export default function WithdrawOnchainFunds() {
                   className="text-muted-foreground text-xs"
                   onClick={() => setShowAdvanced((current) => !current)}
                 >
-                  <ChevronDown />
+                  <ChevronDownIcon />
                   Advanced Options
                 </Button>
               )}
@@ -344,7 +350,9 @@ export default function WithdrawOnchainFunds() {
                           {sendAll ? (
                             "entire on-chain balance"
                           ) : (
-                            <>{new Intl.NumberFormat().format(+amount)} sats</>
+                            <>
+                              <FormattedBitcoinAmount amount={+amount * 1000} />
+                            </>
                           )}
                         </span>
                       </p>
@@ -372,6 +380,12 @@ export default function WithdrawOnchainFunds() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+
+            <Separator className="my-4" />
+            <FixedFloatButton from="BTC" className="w-full" variant="secondary">
+              <ExternalLinkIcon className="size-4" />
+              Withdraw to other Cryptocurrency
+            </FixedFloatButton>
           </div>
         </form>
       </div>

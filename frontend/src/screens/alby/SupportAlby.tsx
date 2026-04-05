@@ -1,9 +1,9 @@
 import {
   CodeIcon,
-  HandCoins,
+  HandCoinsIcon,
   PlusCircleIcon,
   RefreshCwIcon,
-  Sparkles,
+  SparklesIcon,
 } from "lucide-react";
 import React from "react";
 import { useNavigate } from "react-router-dom";
@@ -36,13 +36,16 @@ import {
   SUPPORT_ALBY_CONNECTION_NAME,
   SUPPORT_ALBY_LIGHTNING_ADDRESS,
 } from "src/constants";
+import { useInfo } from "src/hooks/useInfo";
 import { createApp } from "src/requests/createApp";
 import { CreateAppRequest, UpdateAppRequest } from "src/types";
+import { formatBitcoinAmount } from "src/utils/bitcoinFormatting";
 import { handleRequestError } from "src/utils/handleRequestError";
 import { request } from "src/utils/request";
 
 function SupportAlby() {
   const navigate = useNavigate();
+  const { data: info } = useInfo();
 
   const [amount, setAmount] = React.useState("");
   const [senderName, setSenderName] = React.useState("");
@@ -51,6 +54,10 @@ function SupportAlby() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!info) {
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -61,7 +68,10 @@ function SupportAlby() {
 
       if (+amount < 1000) {
         toast.error("Amount too low", {
-          description: "Minimum payment is 1000 sats",
+          description: `Minimum payment is ${formatBitcoinAmount(
+            1_000 * 1000,
+            info.bitcoinDisplayFormat
+          )}`,
         });
         return;
       }
@@ -117,13 +127,8 @@ function SupportAlby() {
       }
 
       // add the ZapPlanner subscription ID to the app metadata
+      // Only send metadata since that's the only thing changing
       const updateAppRequest: UpdateAppRequest = {
-        name: createAppRequest.name,
-        scopes: createAppRequest.scopes,
-        budgetRenewal: createAppRequest.budgetRenewal!,
-        expiresAt: createAppRequest.expiresAt,
-        maxAmount,
-        isolated,
         metadata: {
           ...createAppRequest.metadata,
           zapplanner_subscription_id: subscriptionId,
@@ -139,7 +144,7 @@ function SupportAlby() {
       });
 
       toast("Thank you for becoming a supporter", {
-        description: "The first payment is scheduled immediately.",
+        description: "Payment will be made at the start of each month",
       });
 
       navigate("/");
@@ -154,10 +159,11 @@ function SupportAlby() {
     <>
       <AppHeader
         title="Support Alby Hub"
+        pageTitle="Support Alby"
         description="We are committed to elevating the Bitcoin ecosystem by offering reliable, efficient, and user-friendly software solutions for seamless transactions. With your help, we can keep pushing boundaries and evolving Alby Hub into something extraordinary."
       />
       <h2 className="text-2xl font-semibold">Become a Supporter</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Card className="flex flex-col">
           <CardHeader className="grow">
             <CardTitle>Upgrade to Pro</CardTitle>
@@ -169,7 +175,7 @@ function SupportAlby() {
           <CardFooter className="flex justify-end">
             <UpgradeDialog>
               <Button>
-                <Sparkles />
+                <SparklesIcon />
                 Upgrade to Pro
               </Button>
             </UpgradeDialog>
@@ -189,7 +195,7 @@ function SupportAlby() {
               <div className="flex flex-col items-center justify-center gap-2">
                 <DialogTrigger asChild>
                   <Button>
-                    <HandCoins />
+                    <HandCoinsIcon />
                     Setup Donation
                   </Button>
                 </DialogTrigger>

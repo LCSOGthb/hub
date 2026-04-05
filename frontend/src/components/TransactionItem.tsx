@@ -15,6 +15,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import AppAvatar from "src/components/AppAvatar";
 import ExternalLink from "src/components/ExternalLink";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import FormattedFiatAmount from "src/components/FormattedFiatAmount";
 import { PaymentFailedAlert } from "src/components/PaymentFailedAlert";
 import PodcastingInfo from "src/components/PodcastingInfo";
@@ -42,6 +43,16 @@ type Props = {
 function safeNpubEncode(hex: string): string | undefined {
   try {
     return nip19.npubEncode(hex);
+  } catch {
+    return undefined;
+  }
+}
+
+function safeNeventEncode(id: string): string | undefined {
+  try {
+    return nip19.neventEncode({
+      id,
+    });
   } catch {
     return undefined;
   }
@@ -82,6 +93,7 @@ function TransactionItem({ tx }: Props) {
       : undefined;
 
   const eventId = tx.metadata?.nostr?.tags?.find((t) => t[0] === "e")?.[1];
+  const nevent = eventId ? safeNeventEncode(eventId) : undefined;
 
   const bolt12Offer = tx.metadata?.offer;
 
@@ -194,14 +206,10 @@ function TransactionItem({ tx }: Props) {
                   )}
                 >
                   {type == "outgoing" ? "-" : "+"}
-                  <span className="font-medium">
-                    {new Intl.NumberFormat().format(
-                      Math.floor(tx.amount / 1000)
-                    )}
-                  </span>
-                </p>
-                <p className="text-muted-foreground">
-                  {Math.floor(tx.amount / 1000) == 1 ? "sat" : "sats"}
+                  <FormattedBitcoinAmount
+                    amount={tx.amount}
+                    className="font-medium"
+                  />
                 </p>
               </div>
               <FormattedFiatAmount
@@ -227,8 +235,7 @@ function TransactionItem({ tx }: Props) {
               {typeStateIcon}
               <div className="ml-4">
                 <p className="text-xl md:text-2xl font-semibold sensitive">
-                  {new Intl.NumberFormat().format(Math.floor(tx.amount / 1000))}{" "}
-                  {Math.floor(tx.amount / 1000) == 1 ? "sat" : "sats"}
+                  <FormattedBitcoinAmount amount={tx.amount} />
                 </p>
                 <FormattedFiatAmount amount={Math.floor(tx.amount / 1000)} />
               </div>
@@ -278,10 +285,7 @@ function TransactionItem({ tx }: Props) {
               <div className="mt-6">
                 <p>Fee</p>
                 <p className="text-muted-foreground">
-                  {new Intl.NumberFormat().format(
-                    Math.floor(tx.feesPaid / 1000)
-                  )}{" "}
-                  {Math.floor(tx.feesPaid / 1000) == 1 ? "sat" : "sats"}
+                  <FormattedBitcoinAmount amount={tx.feesPaid} />
                   {tx.feesPaid > 0 && (
                     <>&nbsp;({((tx.feesPaid / tx.amount) * 100).toFixed(2)}%)</>
                   )}
@@ -314,13 +318,11 @@ function TransactionItem({ tx }: Props) {
             )}
             {/* for Alby lightning addresses the content of the zap request is
             automatically extracted and already displayed above as description */}
-            {tx.metadata?.nostr && eventId && npub && (
+            {tx.metadata?.nostr && nevent && npub && (
               <div className="mt-6">
                 <p>
                   <ExternalLink
-                    to={`https://njump.me/${nip19.neventEncode({
-                      id: eventId,
-                    })}`}
+                    to={`https://njump.me/${nevent}`}
                     className="underline"
                   >
                     Nostr Zap

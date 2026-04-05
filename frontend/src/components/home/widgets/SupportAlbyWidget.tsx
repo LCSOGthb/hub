@@ -1,13 +1,13 @@
 import { HeartIcon } from "lucide-react";
-import { Link } from "react-router-dom";
-import { Button } from "src/components/ui/button";
 import {
   Card,
+  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
 } from "src/components/ui/card";
+import { LinkButton } from "src/components/ui/custom/link-button";
 import { SUPPORT_ALBY_CONNECTION_NAME } from "src/constants";
 import { useAlbyMe } from "src/hooks/useAlbyMe";
 import { useApps } from "src/hooks/useApps";
@@ -31,20 +31,26 @@ export function SupportAlbyWidget() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Support Alby</CardTitle>
-        <CardDescription>
-          Upgrade to Pro or setup a recurring payment to support the development
-          of Alby Hub, Alby Go and the NWC ecosystem.
-        </CardDescription>
+      <CardHeader className="px-6 pb-0">
+        <CardTitle className="text-base font-semibold">
+          Support Open Source
+        </CardTitle>
       </CardHeader>
-      <CardFooter className="flex justify-end">
-        <Link to="/support-alby">
-          <Button variant="outline">
-            <HeartIcon />
-            Become a Supporter
-          </Button>
-        </Link>
+      <CardContent className="px-6 py-0">
+        <div className="flex items-center gap-4">
+          <div className="flex size-12 items-center justify-center text-orange-500">
+            <HeartIcon className="size-12 stroke-[1.75]" />
+          </div>
+          <CardDescription className="text-sm leading-5">
+            Upgrade to Pro or donate to support the development of Alby Hub,
+            Alby Go and Alby Extension.
+          </CardDescription>
+        </div>
+      </CardContent>
+      <CardFooter className="justify-end px-6 pt-0">
+        <LinkButton to="/support-alby" variant="outline">
+          Become a Supporter
+        </LinkButton>
       </CardFooter>
     </Card>
   );

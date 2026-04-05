@@ -14,6 +14,7 @@ import { useChannels } from "src/hooks/useChannels";
 import { Invoice } from "@getalby/lightning-tools/bolt11";
 import { LightningAddress } from "@getalby/lightning-tools/lnurl";
 import AppHeader from "src/components/AppHeader";
+import { CryptoSwapAlert } from "src/components/CryptoSwapAlert";
 
 export default function Send() {
   const { data: balances } = useBalances();
@@ -22,6 +23,7 @@ export default function Send() {
 
   const [recipient, setRecipient] = React.useState("");
   const [isLoading, setLoading] = React.useState(false);
+  const [showSwapAlert, setShowSwapAlert] = React.useState(false);
 
   const paste = async () => {
     const text = await navigator.clipboard.readText();
@@ -70,6 +72,7 @@ export default function Send() {
         },
       });
     } catch (error) {
+      setShowSwapAlert(true);
       toast.error("Invalid recipient", {
         description: "" + error,
       });
@@ -85,9 +88,10 @@ export default function Send() {
 
   return (
     <div className="grid gap-4">
-      <AppHeader title="Send" />
+      <AppHeader pageTitle="Send" title="Send" />
       <div className="w-full md:max-w-lg">
         <form onSubmit={onSubmit} className="grid gap-6">
+          {showSwapAlert && <CryptoSwapAlert />}
           <div className="grid gap-2">
             <Label htmlFor="recipient">Recipient</Label>
             <div className="flex gap-2">
@@ -99,6 +103,7 @@ export default function Send() {
                 placeholder="Invoice, lightning address, on-chain address"
                 onChange={(e) => {
                   setRecipient(e.target.value.trim());
+                  setShowSwapAlert(false);
                 }}
               />
               <Button

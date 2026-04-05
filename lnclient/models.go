@@ -62,11 +62,10 @@ type LNClient interface {
 	GetPubkey() string
 	GetInfo(ctx context.Context) (info *NodeInfo, err error)
 	MakeInvoice(ctx context.Context, amount int64, description string, descriptionHash string, expiry int64, throughNodePubkey *string) (transaction *Transaction, err error)
-	MakeHoldInvoice(ctx context.Context, amount int64, description string, descriptionHash string, expiry int64, paymentHash string) (transaction *Transaction, err error)
+	MakeHoldInvoice(ctx context.Context, amount int64, description string, descriptionHash string, expiry int64, paymentHash string, minCltvExpiryDelta *uint64) (transaction *Transaction, err error)
 	SettleHoldInvoice(ctx context.Context, preimage string) (err error)
 	CancelHoldInvoice(ctx context.Context, paymentHash string) (err error)
 	LookupInvoice(ctx context.Context, paymentHash string) (transaction *Transaction, err error)
-	ListTransactions(ctx context.Context, from, until, limit, offset uint64, unpaid bool, invoiceType string) (transactions []Transaction, err error)
 	ListOnchainTransactions(ctx context.Context) ([]OnchainTransaction, error)
 	Shutdown() error
 	ListChannels(ctx context.Context) (channels []Channel, err error)

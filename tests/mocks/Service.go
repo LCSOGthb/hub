@@ -9,6 +9,7 @@ import (
 	"github.com/getAlby/hub/config"
 	"github.com/getAlby/hub/events"
 	"github.com/getAlby/hub/lnclient"
+	"github.com/getAlby/hub/service"
 	"github.com/getAlby/hub/service/keys"
 	"github.com/getAlby/hub/swaps"
 	"github.com/getAlby/hub/transactions"
@@ -365,6 +366,52 @@ func (_c *MockService_GetLNClient_Call) RunAndReturn(run func() lnclient.LNClien
 	return _c
 }
 
+// GetRelayStatuses provides a mock function for the type MockService
+func (_mock *MockService) GetRelayStatuses() []service.RelayStatus {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRelayStatuses")
+	}
+
+	var r0 []service.RelayStatus
+	if returnFunc, ok := ret.Get(0).(func() []service.RelayStatus); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]service.RelayStatus)
+		}
+	}
+	return r0
+}
+
+// MockService_GetRelayStatuses_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRelayStatuses'
+type MockService_GetRelayStatuses_Call struct {
+	*mock.Call
+}
+
+// GetRelayStatuses is a helper method to define mock.On call
+func (_e *MockService_Expecter) GetRelayStatuses() *MockService_GetRelayStatuses_Call {
+	return &MockService_GetRelayStatuses_Call{Call: _e.mock.On("GetRelayStatuses")}
+}
+
+func (_c *MockService_GetRelayStatuses_Call) Run(run func()) *MockService_GetRelayStatuses_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockService_GetRelayStatuses_Call) Return(relayStatuss []service.RelayStatus) *MockService_GetRelayStatuses_Call {
+	_c.Call.Return(relayStatuss)
+	return _c
+}
+
+func (_c *MockService_GetRelayStatuses_Call) RunAndReturn(run func() []service.RelayStatus) *MockService_GetRelayStatuses_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetStartupState provides a mock function for the type MockService
 func (_mock *MockService) GetStartupState() string {
 	ret := _mock.Called()
@@ -501,50 +548,6 @@ func (_c *MockService_GetTransactionsService_Call) RunAndReturn(run func() trans
 	return _c
 }
 
-// IsRelayReady provides a mock function for the type MockService
-func (_mock *MockService) IsRelayReady() bool {
-	ret := _mock.Called()
-
-	if len(ret) == 0 {
-		panic("no return value specified for IsRelayReady")
-	}
-
-	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func() bool); ok {
-		r0 = returnFunc()
-	} else {
-		r0 = ret.Get(0).(bool)
-	}
-	return r0
-}
-
-// MockService_IsRelayReady_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsRelayReady'
-type MockService_IsRelayReady_Call struct {
-	*mock.Call
-}
-
-// IsRelayReady is a helper method to define mock.On call
-func (_e *MockService_Expecter) IsRelayReady() *MockService_IsRelayReady_Call {
-	return &MockService_IsRelayReady_Call{Call: _e.mock.On("IsRelayReady")}
-}
-
-func (_c *MockService_IsRelayReady_Call) Run(run func()) *MockService_IsRelayReady_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run()
-	})
-	return _c
-}
-
-func (_c *MockService_IsRelayReady_Call) Return(b bool) *MockService_IsRelayReady_Call {
-	_c.Call.Return(b)
-	return _c
-}
-
-func (_c *MockService_IsRelayReady_Call) RunAndReturn(run func() bool) *MockService_IsRelayReady_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // Shutdown provides a mock function for the type MockService
 func (_mock *MockService) Shutdown() {
 	_mock.Called()
@@ -601,14 +604,20 @@ type MockService_StartApp_Call struct {
 }
 
 // StartApp is a helper method to define mock.On call
-//   - encryptionKey
+//   - encryptionKey string
 func (_e *MockService_Expecter) StartApp(encryptionKey interface{}) *MockService_StartApp_Call {
 	return &MockService_StartApp_Call{Call: _e.mock.On("StartApp", encryptionKey)}
 }
 
 func (_c *MockService_StartApp_Call) Run(run func(encryptionKey string)) *MockService_StartApp_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string))
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }

@@ -1,9 +1,8 @@
 import { CheckIcon, CopyIcon, EyeIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import QRCode from "react-qr-code";
-import { Link } from "react-router-dom";
 import { AppStoreApp } from "src/components/connections/SuggestedAppData";
 import Loading from "src/components/Loading";
+import QRCode from "src/components/QRCode";
 import { Badge } from "src/components/ui/badge";
 import { Button } from "src/components/ui/button";
 import {
@@ -12,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "src/components/ui/card";
+import { LinkButton } from "src/components/ui/custom/link-button";
 import { copyToClipboard } from "src/lib/clipboard";
 import { cn } from "src/lib/utils";
 import { App } from "src/types";
@@ -40,23 +40,23 @@ export function ConnectAppCard({
   }, []);
 
   return (
-    <Card className="max-w-sm">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle className="text-center">Connection Secret</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col items-center gap-5">
         {!app.lastUsedAt ? (
           <>
-            <div className="flex flex-row items-center gap-2 text-sm">
+            <div className="flex flex-row items-center gap-2 text-sm z-10">
               <Loading className="size-4" />
               <p>Waiting for app to connect</p>
             </div>
             {timeout && (
               <div className="text-sm flex flex-col gap-2 items-center text-center">
                 Connecting is taking longer than usual.
-                <Link to={`/apps/${app?.id}`}>
-                  <Button variant="secondary">Continue anyway</Button>
-                </Link>
+                <LinkButton to={`/apps/${app?.id}`} variant="secondary">
+                  Continue anyway
+                </LinkButton>
               </div>
             )}
           </>
@@ -72,7 +72,7 @@ export function ConnectAppCard({
               className={cn(!isQRCodeVisible && "blur-md cursor-pointer")}
               onClick={() => setIsQRCodeVisible(true)}
             >
-              <QRCode className={"w-full"} value={pairingUri} />
+              <QRCode value={pairingUri} />
               {appStoreApp && (
                 <img
                   src={appStoreApp.logo}

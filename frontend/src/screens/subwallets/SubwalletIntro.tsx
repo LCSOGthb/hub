@@ -1,35 +1,39 @@
 import {
   CirclePlusIcon,
-  HandCoins,
-  HelpCircle,
-  TriangleAlert,
-  Wallet2,
+  HandCoinsIcon,
+  HelpCircleIcon,
+  TriangleAlertIcon,
+  Wallet2Icon,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 import AppHeader from "src/components/AppHeader";
-import ExternalLink from "src/components/ExternalLink";
-import ResponsiveButton from "src/components/ResponsiveButton";
-import { Button } from "src/components/ui/button";
 
 import SubWalletDarkSVG from "public/images/illustrations/sub-wallet-dark.svg";
 import SubWalletLightSVG from "public/images/illustrations/sub-wallet-light.svg";
+import ResponsiveLinkButton from "src/components/ResponsiveLinkButton";
+import { ExternalLinkButton } from "src/components/ui/custom/external-link-button";
+import { LinkButton } from "src/components/ui/custom/link-button";
 
 export function SubwalletIntro() {
   return (
     <div className="grid gap-4">
       <AppHeader
         title="Sub-wallets"
+        pageTitle="Sub-wallets"
         description="Create sub-wallets for yourself, friends, family or coworkers"
         contentRight={
           <>
-            <ExternalLink to="https://guides.getalby.com/user-guide/alby-hub/sub-wallets">
-              <Button variant="outline" size="icon">
-                <HelpCircle className="size-4" />
-              </Button>
-            </ExternalLink>
-            <Link to="/sub-wallets/new">
-              <ResponsiveButton icon={CirclePlusIcon} text="New Sub-wallet" />
-            </Link>
+            <ExternalLinkButton
+              to="https://guides.getalby.com/user-guide/alby-hub/sub-wallets"
+              variant="outline"
+              size="icon"
+            >
+              <HelpCircleIcon className="size-4" />
+            </ExternalLinkButton>
+            <ResponsiveLinkButton
+              to="/sub-wallets/new"
+              icon={CirclePlusIcon}
+              text="New Sub-wallet"
+            />
           </>
         }
       />
@@ -41,7 +45,7 @@ export function SubwalletIntro() {
           </div>
           <div>
             <div className="flex flex-row gap-3">
-              <Wallet2 className="size-6" />
+              <Wallet2Icon className="size-6" />
               <div className="font-medium">
                 Sub-wallets are separate wallets hosted by your Alby Hub
               </div>
@@ -53,7 +57,7 @@ export function SubwalletIntro() {
           </div>
           <div>
             <div className="flex flex-row gap-3">
-              <HandCoins className="size-6" />
+              <HandCoinsIcon className="size-6" />
               <div className="font-medium">
                 Sub-wallets depend on your Alby Hub spending balance and receive
                 limit
@@ -66,7 +70,7 @@ export function SubwalletIntro() {
           </div>
           <div>
             <div className="flex flex-row gap-3">
-              <TriangleAlert className="size-6" />
+              <TriangleAlertIcon className="size-6" />
               <div className="font-medium">
                 Be wary of spending sub-wallets funds
               </div>
@@ -79,9 +83,9 @@ export function SubwalletIntro() {
             </div>
           </div>
           <div>
-            <Link to="/sub-wallets/new">
-              <Button className="mt-4">Create Sub-wallet</Button>
-            </Link>
+            <LinkButton to="/sub-wallets/new" className="mt-4">
+              Create Sub-wallet
+            </LinkButton>
           </div>
         </div>
       </div>

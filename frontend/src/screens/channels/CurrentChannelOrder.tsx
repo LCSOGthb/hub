@@ -13,6 +13,8 @@ import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import AppHeader from "src/components/AppHeader";
 import ExternalLink from "src/components/ExternalLink";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
+import FormattedFiatAmount from "src/components/FormattedFiatAmount";
 import Loading from "src/components/Loading";
 import QRCode from "src/components/QRCode";
 import { Button } from "src/components/ui/button";
@@ -48,6 +50,8 @@ import { useBalances } from "src/hooks/useBalances";
 import { ChannelWaitingForConfirmations } from "src/components/channels/ChannelWaitingForConfirmations";
 import { PayLightningInvoice } from "src/components/PayLightningInvoice";
 import TwoColumnLayoutHeader from "src/components/TwoColumnLayoutHeader";
+import { ExternalLinkButton } from "src/components/ui/custom/external-link-button";
+import { LinkButton } from "src/components/ui/custom/link-button";
 import { useChannels } from "src/hooks/useChannels";
 import { useMempoolApi } from "src/hooks/useMempoolApi";
 import { useNodeDetails } from "src/hooks/useNodeDetails";
@@ -116,6 +120,7 @@ function Success() {
     <div className="flex flex-col justify-center gap-5 p-5 max-w-md items-stretch">
       <TwoColumnLayoutHeader
         title="Channel Opened"
+        pageTitle="Channel Opened"
         description="Your new lightning channel is ready to use"
       />
 
@@ -134,9 +139,9 @@ function Success() {
         .
       </p>
 
-      <Link to="/home" className="flex justify-center mt-8">
-        <Button>Go to your dashboard</Button>
-      </Link>
+      <LinkButton to="/home" className="flex justify-center mt-8">
+        Go to your dashboard
+      </LinkButton>
     </div>
   );
 }
@@ -273,6 +278,7 @@ function PayBitcoinChannelOrderTopup({ order }: { order: NewChannelOrder }) {
   return (
     <div className="grid gap-5">
       <AppHeader
+        pageTitle="Deposit bitcoin"
         title="Deposit bitcoin"
         description="You don't have enough Bitcoin to open your intended channel"
       />
@@ -282,13 +288,13 @@ function PayBitcoinChannelOrderTopup({ order }: { order: NewChannelOrder }) {
           <p className="text-xs slashed-zero">
             You currently have{" "}
             <span className="font-semibold sensitive">
-              {new Intl.NumberFormat().format(balances.onchain.total)}
-            </span>{" "}
-            sats. We recommend depositing{" "}
+              <FormattedBitcoinAmount amount={balances.onchain.total * 1000} />
+            </span>
+            . We recommend depositing an additional amount of{" "}
             <span className="font-semibold">
-              {new Intl.NumberFormat().format(recommendedAmount)}
+              <FormattedBitcoinAmount amount={recommendedAmount * 1000} />
             </span>{" "}
-            sats to open this channel.
+            to open this channel.
           </p>
           <p className="text-xs text-muted-foreground">
             This amount includes cost for the channel opening and potential
@@ -361,21 +367,21 @@ function PayBitcoinChannelOrderTopup({ order }: { order: NewChannelOrder }) {
           </CardHeader>
           {unspentAmount > 0 && (
             <CardContent className="slashed-zero">
-              {new Intl.NumberFormat().format(unspentAmount)} sats deposited
+              <FormattedBitcoinAmount amount={unspentAmount * 1000} /> deposited
             </CardContent>
           )}
         </Card>
 
-        <ExternalLink to={topupLink} className="w-full">
-          <Button className="w-full">
-            Topup with your credit card or bank account
-          </Button>
-        </ExternalLink>
-        <Link to="/channels/incoming" className="w-full">
-          <Button className="w-full" variant="secondary">
-            Need receiving capacity?
-          </Button>
-        </Link>
+        <ExternalLinkButton to={topupLink} className="w-full">
+          Top up with your credit card or bank account
+        </ExternalLinkButton>
+        <LinkButton
+          to="/channels/incoming"
+          variant="secondary"
+          className="w-full"
+        >
+          Need receiving capacity?
+        </LinkButton>
       </div>
     </div>
   );
@@ -496,6 +502,7 @@ function PayBitcoinChannelOrderWithSpendableFunds({
   return (
     <div className="flex flex-col gap-5">
       <AppHeader
+        pageTitle="Opening channel"
         title="Opening channel"
         description="Your funds have been successfully deposited"
       />
@@ -524,15 +531,10 @@ function useWaitForNewChannel() {
 
   React.useEffect(() => {
     if (newChannel) {
-      (async () => {
-        toast("Successfully opened channel");
-        setTimeout(() => {
-          useChannelOrderStore.getState().updateOrder({
-            status: "opening",
-            fundingTxId: newChannel.fundingTxId,
-          });
-        }, 3000);
-      })();
+      useChannelOrderStore.getState().updateOrder({
+        status: "opening",
+        fundingTxId: newChannel.fundingTxId,
+      });
     }
   }, [newChannel]);
 }
@@ -551,7 +553,7 @@ function PayLightningChannelOrder({ order }: { order: NewChannelOrder }) {
   if (order.paymentMethod !== "lightning") {
     throw new Error("incorrect payment method");
   }
-
+  const { data: balances } = useBalances();
   const { data: channels } = useChannels(true);
   const [, setRequestedInvoice] = React.useState(false);
 
@@ -618,19 +620,18 @@ function PayLightningChannelOrder({ order }: { order: NewChannelOrder }) {
   ]);
 
   const canPayInternally =
-    channels &&
+    balances &&
     lspOrderResponse &&
-    channels.some(
-      (channel) =>
-        channel.localSpendableBalance / 1000 > lspOrderResponse.invoiceAmount
-    );
+    balances.lightning.nextMaxSpendableMPP / 1000 >
+      lspOrderResponse.invoiceAmount;
   const [isPaying, setPaying] = React.useState(false);
   const [payExternally, setPayExternally] = React.useState(false);
 
   return (
     <div className="flex flex-col gap-5">
       <AppHeader
-        title={"Buy Channel"}
+        pageTitle="Review Channel Purchase"
+        title="Review Channel Purchase"
         description={
           lspOrderResponse
             ? "Complete Payment to open a channel to your node"
@@ -651,10 +652,9 @@ function PayLightningChannelOrder({ order }: { order: NewChannelOrder }) {
                         Spending Balance
                       </TableCell>
                       <TableCell className="text-right p-3">
-                        {new Intl.NumberFormat().format(
-                          lspOrderResponse.outgoingLiquidity
-                        )}{" "}
-                        sats
+                        <FormattedBitcoinAmount
+                          amount={lspOrderResponse.outgoingLiquidity * 1000}
+                        />
                       </TableCell>
                     </TableRow>
                   )}
@@ -664,10 +664,15 @@ function PayLightningChannelOrder({ order }: { order: NewChannelOrder }) {
                         Incoming Liquidity
                       </TableCell>
                       <TableCell className="text-right p-3">
-                        {new Intl.NumberFormat().format(
-                          lspOrderResponse.incomingLiquidity
-                        )}{" "}
-                        sats
+                        <div className="flex flex-col items-end">
+                          <FormattedBitcoinAmount
+                            amount={lspOrderResponse.incomingLiquidity * 1000}
+                          />
+                          <FormattedFiatAmount
+                            amount={lspOrderResponse.incomingLiquidity}
+                            showApprox
+                          />
+                        </div>
                       </TableCell>
                     </TableRow>
                   )}
@@ -676,18 +681,29 @@ function PayLightningChannelOrder({ order }: { order: NewChannelOrder }) {
                       Amount to pay
                     </TableCell>
                     <TableCell className="font-semibold text-right p-3">
-                      {new Intl.NumberFormat().format(
-                        lspOrderResponse.invoiceAmount
-                      )}{" "}
-                      sats
+                      <div className="flex flex-col items-end">
+                        <FormattedBitcoinAmount
+                          amount={lspOrderResponse.invoiceAmount * 1000}
+                        />
+                        <FormattedFiatAmount
+                          amount={lspOrderResponse.invoiceAmount}
+                          showApprox
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
             </div>
+            <div className="flex justify-center w-full -mb-5">
+              <p className="text-center text-xs text-muted-foreground max-w-sm">
+                By proceeding, you consent the channel opens immediately and
+                that you lose the right to revoke once it is open.
+              </p>
+            </div>
             <>
               {canPayInternally && (
-                <>
+                <div className="flex flex-col gap-2">
                   <LoadingButton
                     loading={isPaying}
                     className="mt-4"
@@ -695,6 +711,8 @@ function PayLightningChannelOrder({ order }: { order: NewChannelOrder }) {
                       try {
                         setPaying(true);
 
+                        // NOTE: for amboss this will not return until the HOLD invoice is settled
+                        // which is after the channel has N block confirmations
                         await request<PayInvoiceResponse>(
                           `/api/payments/${lspOrderResponse.invoice}`,
                           {
@@ -724,37 +742,40 @@ function PayLightningChannelOrder({ order }: { order: NewChannelOrder }) {
                     <Button
                       type="button"
                       variant="link"
-                      className="text-muted-foreground text-xs"
+                      className="text-muted-foreground"
                       onClick={() => setPayExternally(true)}
                     >
                       Pay with another wallet
                     </Button>
                   )}
-                </>
+                </div>
               )}
 
               {(payExternally || !canPayInternally) && (
-                <PayLightningInvoice invoice={lspOrderResponse.invoice} />
+                <div className="flex flex-row justify-center">
+                  <PayLightningInvoice invoice={lspOrderResponse.invoice} />
+                </div>
               )}
 
               <div className="flex-1 flex flex-col justify-end items-center gap-4">
-                <Separator className="my-16" />
+                <Separator className="mt-4 mb-6" />
                 <p className="text-sm text-muted-foreground text-center">
                   Other options
                 </p>
-                <Link to="/channels/outgoing" className="w-full">
-                  <Button className="w-full" variant="secondary">
-                    Increase Spending Balance
-                  </Button>
-                </Link>
-                <ExternalLink
-                  to="https://www.getalby.com/topup"
+                <LinkButton
+                  to="/channels/outgoing"
+                  variant="secondary"
                   className="w-full"
                 >
-                  <Button className="w-full" variant="secondary">
-                    Buy Bitcoin
-                  </Button>
-                </ExternalLink>
+                  Increase Spending Balance
+                </LinkButton>
+                <ExternalLinkButton
+                  to="https://www.getalby.com/topup"
+                  variant="secondary"
+                  className="w-full"
+                >
+                  Buy Bitcoin
+                </ExternalLinkButton>
               </div>
             </>
           </div>

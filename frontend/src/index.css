@@ -23,6 +23,14 @@ body {
 @import "./themes/index.css";
 
 @layer base {
+  [role="dialog"],
+  [role="alertdialog"] {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+@layer base {
   button:not([disabled]),
   [role="button"]:not([disabled]) {
     cursor: pointer;
@@ -31,7 +39,8 @@ body {
 
 @layer base {
   [role="menuitem"]:not([disabled]),
-  [data-slot="command-item"] {
+  [data-slot="command-item"],
+  [data-slot="field"] {
     cursor: pointer !important;
   }
 }

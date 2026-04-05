@@ -6,6 +6,7 @@ import { XIcon } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import AppHeader from "src/components/AppHeader";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import FormattedFiatAmount from "src/components/FormattedFiatAmount";
 import Loading from "src/components/Loading";
 import { PaymentFailedAlert } from "src/components/PaymentFailedAlert";
@@ -83,7 +84,7 @@ export default function ZeroAmount() {
 
   return (
     <div className="grid gap-4">
-      <AppHeader title="Pay Invoice" />
+      <AppHeader pageTitle="Pay Invoice" title="Pay Invoice" />
       <div className="max-w-lg grid gap-4">
         <PendingPaymentAlert />
         {errorMessage && (
@@ -135,10 +136,9 @@ export default function ZeroAmount() {
             <div className="flex justify-between text-xs text-muted-foreground sensitive slashed-zero">
               <div>
                 Spending Balance:{" "}
-                {new Intl.NumberFormat().format(
-                  Math.floor(balances.lightning.totalSpendable / 1000)
-                )}{" "}
-                sats
+                <FormattedBitcoinAmount
+                  amount={balances.lightning.totalSpendable}
+                />
               </div>
               <FormattedFiatAmount
                 className="text-xs"

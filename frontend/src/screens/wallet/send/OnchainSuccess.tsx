@@ -1,5 +1,6 @@
 import { ArrowLeftIcon, ExternalLinkIcon, HandCoinsIcon } from "lucide-react";
 import { useLocation } from "react-router-dom";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import FormattedFiatAmount from "src/components/FormattedFiatAmount";
 import {
   Card,
@@ -37,7 +38,7 @@ export default function OnchainSuccess() {
 
   return (
     <div className="grid gap-4">
-      <AppHeader title="Send to On-chain" />
+      <AppHeader pageTitle="Send to On-chain" title="Send to On-chain" />
       <div className="w-full md:max-w-lg">
         <Card className="w-full">
           <CardHeader>
@@ -55,7 +56,7 @@ export default function OnchainSuccess() {
             )}
             <div className="flex flex-col gap-1 items-center">
               <p className="text-2xl font-medium slashed-zero">
-                {new Intl.NumberFormat().format(amount)} sats
+                <FormattedBitcoinAmount amount={amount * 1000} />
               </p>
               <FormattedFiatAmount amount={amount} className="text-xl" />
             </div>

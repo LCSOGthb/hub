@@ -1,6 +1,6 @@
 "use client";
 
-import { Command, SearchIcon } from "lucide-react";
+import { CommandIcon, SearchIcon } from "lucide-react";
 import React from "react";
 import { Badge } from "src/components/ui/badge";
 
@@ -23,14 +23,6 @@ export function SearchInput({
     setOpen(true);
   }, [setOpen]);
 
-  const handleFocus = React.useCallback(
-    (e: React.FocusEvent<HTMLInputElement>) => {
-      e.target.blur(); // Remove focus from input
-      setOpen(true);
-    },
-    [setOpen]
-  );
-
   const handleKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -50,7 +42,6 @@ export function SearchInput({
         placeholder={placeholder}
         readOnly
         className="cursor-pointer pl-8 pr-8 max-sm:w-32"
-        onFocus={handleFocus}
         onKeyDown={handleKeyDown}
         tabIndex={0}
       />
@@ -59,7 +50,7 @@ export function SearchInput({
         variant="secondary"
         className="absolute right-2 top-1/2 transform -translate-y-1/2 max-sm:hidden"
       >
-        <Command />K
+        <CommandIcon />K
       </Badge>
     </div>
   );

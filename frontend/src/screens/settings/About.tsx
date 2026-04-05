@@ -1,5 +1,6 @@
 import Loading from "src/components/Loading";
 import SettingsHeader from "src/components/SettingsHeader";
+import { Badge } from "src/components/ui/badge";
 import { useAlbyMe } from "src/hooks/useAlbyMe";
 
 import { useInfo } from "src/hooks/useInfo";
@@ -26,7 +27,11 @@ export function About() {
 
   return (
     <>
-      <SettingsHeader title="About" description="Info about your Alby Hub" />
+      <SettingsHeader
+        pageTitle="About"
+        title="About"
+        description="Info about your Alby Hub"
+      />
       <div className="grid gap-4">
         <div className="grid gap-2">
           <p className="font-medium text-sm">Alby Hub Version</p>
@@ -41,16 +46,29 @@ export function About() {
           </p>
         </div>
         <div className="grid gap-2">
-          <p className="font-medium text-sm">Nostr Relay</p>
-          <p className="text-muted-foreground text-sm slashed-zero">
-            {info.relay}
-          </p>
+          <p className="font-medium text-sm">Nostr Relays</p>
+          {info.relays.map((relay) => (
+            <p className="flex items-center gap-2 text-muted-foreground text-sm">
+              {relay.url}
+              <Badge variant={relay.online ? "positive" : "destructive"}>
+                {relay.online ? "online" : "offline"}
+              </Badge>
+            </p>
+          ))}
         </div>
         {info.albyAccountConnected && albyMe && (
           <div className="grid gap-2">
             <p className="font-medium text-sm">Connected Alby Account</p>
             <p className="text-muted-foreground text-sm slashed-zero">
               {albyMe.email || albyMe.lightning_address}
+            </p>
+          </div>
+        )}
+        {info.albyAccountConnected && albyMe?.hub.name && (
+          <div className="grid gap-2">
+            <p className="font-medium text-sm">Alby Hub Name</p>
+            <p className="text-muted-foreground text-sm slashed-zero">
+              {albyMe.hub.name}
             </p>
           </div>
         )}

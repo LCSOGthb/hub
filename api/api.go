@@ -102,7 +102,7 @@ func (api *api) CreateApp(createAppRequest *CreateAppRequest) (*CreateAppRespons
 		return nil, err
 	}
 
-	relayUrl := api.cfg.GetRelayUrl()
+	relayUrls := api.cfg.GetRelayUrls()
 
 	lightningAddress, err := api.albyOAuthSvc.GetLightningAddress()
 	if err != nil {
@@ -115,14 +115,16 @@ func (api *api) CreateApp(createAppRequest *CreateAppRequest) (*CreateAppRespons
 	responseBody.Pubkey = app.AppPubkey
 	responseBody.PairingSecret = pairingSecretKey
 	responseBody.WalletPubkey = *app.WalletPubkey
-	responseBody.RelayUrl = relayUrl
+	responseBody.RelayUrls = relayUrls
 	responseBody.Lud16 = lightningAddress
 
 	if createAppRequest.ReturnTo != "" {
 		returnToUrl, err := url.Parse(createAppRequest.ReturnTo)
 		if err == nil {
 			query := returnToUrl.Query()
-			query.Add("relay", relayUrl)
+			for _, relayUrl := range relayUrls {
+				query.Add("relay", relayUrl)
+			}
 			query.Add("pubkey", *app.WalletPubkey)
 			if lightningAddress != "" && !app.Isolated {
 				query.Add("lud16", lightningAddress)
@@ -136,53 +138,63 @@ func (api *api) CreateApp(createAppRequest *CreateAppRequest) (*CreateAppRespons
 	if lightningAddress != "" && !app.Isolated {
 		lud16 = fmt.Sprintf("&lud16=%s", lightningAddress)
 	}
-	responseBody.PairingUri = fmt.Sprintf("nostr+walletconnect://%s?relay=%s&secret=%s%s", *app.WalletPubkey, relayUrl, pairingSecretKey, lud16)
+	responseBody.PairingUri = fmt.Sprintf("nostr+walletconnect://%s?relay=%s&secret=%s%s", *app.WalletPubkey, strings.Join(relayUrls, "&relay="), pairingSecretKey, lud16)
 
 	return responseBody, nil
 }
 
 func (api *api) UpdateApp(userApp *db.App, updateAppRequest *UpdateAppRequest) error {
-	name := updateAppRequest.Name
+	err := api.db.Transaction(func(tx *gorm.DB) error {
+		// Initialize name with current app name, update if provided
+		name := userApp.Name
 
-	if name == "" {
-		return fmt.Errorf("won't update an app to have no name")
-	}
+		// Update app name if provided and different
+		if updateAppRequest.Name != nil {
+			name = *updateAppRequest.Name
 
-	maxAmount := updateAppRequest.MaxAmountSat
-	budgetRenewal := updateAppRequest.BudgetRenewal
-
-	if len(updateAppRequest.Scopes) == 0 {
-		return fmt.Errorf("won't update an app to have no request methods")
-	}
-	newScopes := updateAppRequest.Scopes
-
-	expiresAt, err := api.parseExpiresAt(updateAppRequest.ExpiresAt)
-	if err != nil {
-		return fmt.Errorf("invalid expiresAt: %v", err)
-	}
-
-	err = api.db.Transaction(func(tx *gorm.DB) error {
-		// Update app name if it is not the same
-		if name != userApp.Name {
-			err := tx.Model(&db.App{}).Where("id", userApp.ID).Update("name", name).Error
-			if err != nil {
-				return err
+			if name == "" {
+				return fmt.Errorf("won't update an app to have no name")
+			}
+			if name != userApp.Name {
+				err := tx.Model(&db.App{}).Where("id", userApp.ID).Update("name", name).Error
+				if err != nil {
+					return err
+				}
 			}
 		}
 
-		// Update app isolation if it is not the same
-		if updateAppRequest.Isolated != userApp.Isolated {
-			err := tx.Model(&db.App{}).Where("id", userApp.ID).Update("isolated", updateAppRequest.Isolated).Error
-			if err != nil {
-				return err
+		// Update app isolation if provided and different
+		if updateAppRequest.Isolated != nil {
+			isolated := *updateAppRequest.Isolated
+			if isolated != userApp.Isolated {
+				if !isolated {
+					var existingMetadata Metadata
+					if userApp.Metadata != nil {
+						err := json.Unmarshal(userApp.Metadata, &existingMetadata)
+						if err != nil {
+							logger.Logger.WithError(err).WithFields(logrus.Fields{
+								"app_id": userApp.ID,
+							}).Error("Failed to deserialize app metadata")
+							return err
+						}
+						if existingMetadata[constants.METADATA_APPSTORE_APP_ID_KEY] == constants.SUBWALLET_APPSTORE_APP_ID {
+							return errors.New("Cannot update sub-wallet to be non-isolated")
+						}
+					}
+				}
+
+				err := tx.Model(&db.App{}).Where("id", userApp.ID).Update("isolated", isolated).Error
+				if err != nil {
+					return err
+				}
 			}
 		}
 
-		// Update the app metadata
+		// Update the app metadata if provided
 		if updateAppRequest.Metadata != nil {
 			var metadataBytes []byte
 			var err error
-			metadataBytes, err = json.Marshal(updateAppRequest.Metadata)
+			metadataBytes, err = json.Marshal(*updateAppRequest.Metadata)
 			if err != nil {
 				logger.Logger.WithError(err).Error("Failed to serialize metadata")
 				return err
@@ -193,54 +205,105 @@ func (api *api) UpdateApp(userApp *db.App, updateAppRequest *UpdateAppRequest) e
 			}
 		}
 
-		// Update existing permissions with new budget and expiry
-		err = tx.Model(&db.AppPermission{}).Where("app_id", userApp.ID).Updates(map[string]interface{}{
-			"ExpiresAt":     expiresAt,
-			"MaxAmountSat":  maxAmount,
-			"BudgetRenewal": budgetRenewal,
-		}).Error
-		if err != nil {
-			return err
-		}
+		// Handle permissions updates only if any permission-related field is provided
+		if updateAppRequest.Scopes != nil || updateAppRequest.MaxAmountSat != nil ||
+			updateAppRequest.BudgetRenewal != nil || updateAppRequest.ExpiresAt != nil || updateAppRequest.UpdateExpiresAt {
 
-		var existingPermissions []db.AppPermission
-		if err := tx.Where("app_id = ?", userApp.ID).Find(&existingPermissions).Error; err != nil {
-			return err
-		}
+			// Get current values or use provided ones
+			var maxAmount uint64
+			var budgetRenewal string
+			var expiresAt *time.Time
 
-		existingScopeMap := make(map[string]bool)
-		for _, perm := range existingPermissions {
-			existingScopeMap[perm.Scope] = true
-		}
-
-		if slices.Contains(newScopes, constants.SUPERUSER_SCOPE) && !existingScopeMap[constants.SUPERUSER_SCOPE] {
-			return fmt.Errorf(
-				"cannot update app to add superuser permission")
-		}
-
-		// Add new permissions
-		for _, scope := range newScopes {
-			if !existingScopeMap[scope] {
-				perm := db.AppPermission{
-					App:           *userApp,
-					Scope:         scope,
-					ExpiresAt:     expiresAt,
-					MaxAmountSat:  int(maxAmount),
-					BudgetRenewal: budgetRenewal,
-				}
-				if err := tx.Create(&perm).Error; err != nil {
-					return err
-				}
-			}
-			delete(existingScopeMap, scope)
-		}
-
-		// Remove old permissions
-		for scope := range existingScopeMap {
-			if err := tx.Where("app_id = ? AND scope = ?", userApp.ID, scope).Delete(&db.AppPermission{}).Error; err != nil {
+			// Get existing permissions to use as defaults
+			var existingPermissions []db.AppPermission
+			if err := tx.Where("app_id = ?", userApp.ID).Find(&existingPermissions).Error; err != nil {
 				return err
 			}
+
+			// Use existing values as defaults
+			if len(existingPermissions) > 0 {
+				// Find pay_invoice permission for budget-related fields
+				for _, perm := range existingPermissions {
+					if perm.Scope == constants.PAY_INVOICE_SCOPE {
+						maxAmount = uint64(perm.MaxAmountSat)
+						budgetRenewal = perm.BudgetRenewal
+						expiresAt = perm.ExpiresAt
+						break
+					}
+				}
+			}
+
+			// Override with provided values
+			if updateAppRequest.MaxAmountSat != nil {
+				maxAmount = *updateAppRequest.MaxAmountSat
+			}
+			if updateAppRequest.BudgetRenewal != nil {
+				budgetRenewal = *updateAppRequest.BudgetRenewal
+			}
+			if updateAppRequest.ExpiresAt != nil {
+				parsedExpiresAt, err := api.parseExpiresAt(*updateAppRequest.ExpiresAt)
+				if err != nil {
+					return fmt.Errorf("invalid expiresAt: %v", err)
+				}
+				expiresAt = parsedExpiresAt
+			}
+			if updateAppRequest.ExpiresAt == nil && updateAppRequest.UpdateExpiresAt {
+				expiresAt = nil
+			}
+
+			// Update existing permissions with new budget and expiry
+			err := tx.Model(&db.AppPermission{}).Where("app_id", userApp.ID).Updates(map[string]interface{}{
+				"ExpiresAt":     expiresAt,
+				"MaxAmountSat":  maxAmount,
+				"BudgetRenewal": budgetRenewal,
+			}).Error
+			if err != nil {
+				return err
+			}
+
+			// Handle scope changes only if scopes were provided
+			if updateAppRequest.Scopes != nil {
+
+				if len(updateAppRequest.Scopes) == 0 {
+					return fmt.Errorf("won't update an app to have no request methods")
+				}
+
+				existingScopeMap := make(map[string]bool)
+				for _, perm := range existingPermissions {
+					existingScopeMap[perm.Scope] = true
+				}
+
+				if slices.Contains(updateAppRequest.Scopes, constants.SUPERUSER_SCOPE) && !existingScopeMap[constants.SUPERUSER_SCOPE] {
+					return fmt.Errorf("cannot update app to add superuser permission")
+				}
+
+				// Add new permissions
+				for _, scope := range updateAppRequest.Scopes {
+					if !existingScopeMap[scope] {
+						perm := db.AppPermission{
+							App:           *userApp,
+							Scope:         scope,
+							ExpiresAt:     expiresAt,
+							MaxAmountSat:  int(maxAmount),
+							BudgetRenewal: budgetRenewal,
+						}
+						if err := tx.Create(&perm).Error; err != nil {
+							return err
+						}
+					}
+					delete(existingScopeMap, scope)
+				}
+
+				// Remove old permissions
+				for scope := range existingScopeMap {
+					if err := tx.Where("app_id = ? AND scope = ?", userApp.ID, scope).Delete(&db.AppPermission{}).Error; err != nil {
+						return err
+					}
+				}
+			}
 		}
+
+		// Publish update event
 		api.svc.GetEventPublisher().Publish(&events.Event{
 			Event: "nwc_app_updated",
 			Properties: map[string]interface{}{
@@ -257,6 +320,16 @@ func (api *api) UpdateApp(userApp *db.App, updateAppRequest *UpdateAppRequest) e
 }
 
 func (api *api) DeleteApp(userApp *db.App) error {
+	// Delete lightning address if one exists
+	if api.appsSvc.HasLightningAddress(userApp) {
+		err := api.DeleteLightningAddress(context.Background(), userApp.ID)
+		if err != nil {
+			logger.Logger.WithError(err).WithFields(logrus.Fields{
+				"app_id": userApp.ID,
+			}).Error("Failed to delete lightning address during app deletion")
+		}
+	}
+
 	return api.appsSvc.DeleteApp(userApp)
 }
 
@@ -333,12 +406,17 @@ func (api *api) DeleteLightningAddress(ctx context.Context, appId uint) error {
 	return nil
 }
 
-func (api *api) GetApp(dbApp *db.App) *App {
+func (api *api) GetApp(dbApp *db.App) (*App, error) {
 
 	paySpecificPermission := db.AppPermission{}
 	appPermissions := []db.AppPermission{}
 	var expiresAt *time.Time
-	api.db.Where("app_id = ?", dbApp.ID).Find(&appPermissions)
+	if err := api.db.Where("app_id = ?", dbApp.ID).Find(&appPermissions).Error; err != nil {
+		logger.Logger.WithError(err).WithFields(logrus.Fields{
+			"app_id": dbApp.ID,
+		}).Error("Failed to list app permissions")
+		return nil, err
+	}
 
 	requestMethods := []string{}
 	for _, appPerm := range appPermissions {
@@ -351,9 +429,14 @@ func (api *api) GetApp(dbApp *db.App) *App {
 	}
 
 	// renewsIn := ""
-	budgetUsage := uint64(0)
 	maxAmount := uint64(paySpecificPermission.MaxAmountSat)
-	budgetUsage = queries.GetBudgetUsageSat(api.db, &paySpecificPermission)
+	budgetUsage, err := queries.GetBudgetUsage(api.db, &paySpecificPermission)
+	if err != nil {
+		logger.Logger.WithError(err).WithFields(logrus.Fields{
+			"app_id": dbApp.ID,
+		}).Error("Failed to get budget usage for app")
+		return nil, err
+	}
 
 	var metadata Metadata
 	if dbApp.Metadata != nil {
@@ -382,7 +465,7 @@ func (api *api) GetApp(dbApp *db.App) *App {
 		ExpiresAt:          expiresAt,
 		MaxAmountSat:       maxAmount,
 		Scopes:             requestMethods,
-		BudgetUsage:        budgetUsage,
+		BudgetUsage:        budgetUsage / 1000,
 		BudgetRenewal:      paySpecificPermission.BudgetRenewal,
 		Isolated:           dbApp.Isolated,
 		Metadata:           metadata,
@@ -392,10 +475,17 @@ func (api *api) GetApp(dbApp *db.App) *App {
 	}
 
 	if dbApp.Isolated {
-		response.Balance = queries.GetIsolatedBalance(api.db, dbApp.ID)
+		balance, err := queries.GetIsolatedBalance(api.db, dbApp.ID)
+		if err != nil {
+			logger.Logger.WithError(err).WithFields(logrus.Fields{
+				"app_id": dbApp.ID,
+			}).Error("Failed to get isolated app balance")
+			return nil, err
+		}
+		response.Balance = balance
 	}
 
-	return &response
+	return &response, nil
 }
 
 func (api *api) ListApps(limit uint64, offset uint64, filters ListAppsFilters, orderBy string) (*ListAppsResponse, error) {
@@ -405,11 +495,16 @@ func (api *api) ListApps(limit uint64, offset uint64, filters ListAppsFilters, o
 
 	if filters.Name != "" {
 		// searching for "Damus" will return "Damus" and "Damus (1)"
-		query = query.Where("name LIKE ?", filters.Name+"%")
+		// Use case-insensitive search for both SQLite and PostgreSQL
+		if api.db.Dialector.Name() == "postgres" {
+			query = query.Where("name ILIKE ?", filters.Name+"%")
+		} else {
+			query = query.Where("name LIKE ?", filters.Name+"%")
+		}
 	}
 
 	if filters.AppStoreAppId != "" {
-		query = query.Where(datatypes.JSONQuery("metadata").Equals(filters.AppStoreAppId, "app_store_app_id"))
+		query = query.Where(datatypes.JSONQuery("metadata").Equals(filters.AppStoreAppId, constants.METADATA_APPSTORE_APP_ID_KEY))
 	}
 
 	if filters.Unused {
@@ -417,12 +512,16 @@ func (api *api) ListApps(limit uint64, offset uint64, filters ListAppsFilters, o
 		query = query.Where("last_used_at IS NULL OR last_used_at < ?", time.Now().Add(-60*24*time.Hour))
 	}
 
-	if filters.SubWallets != nil && !*filters.SubWallets {
-		// exclude subwallets :scream:
-		if api.db.Dialector.Name() == "sqlite" {
-			query = query.Where("metadata is NULL OR JSON_EXTRACT(metadata, '$.app_store_app_id') IS NULL OR JSON_EXTRACT(metadata, '$.app_store_app_id') != ?", "uncle-jim")
+	if filters.SubWallets != nil {
+		if *filters.SubWallets {
+			query = query.Where(datatypes.JSONQuery("metadata").Equals(constants.SUBWALLET_APPSTORE_APP_ID, constants.METADATA_APPSTORE_APP_ID_KEY))
 		} else {
-			query = query.Where("metadata IS NULL OR metadata->>'app_store_app_id' IS NULL OR metadata->>'app_store_app_id' != ?", "uncle-jim")
+			// exclude subwallets :scream:
+			if api.db.Dialector.Name() == "sqlite" {
+				query = query.Where(fmt.Sprintf("metadata is NULL OR JSON_EXTRACT(metadata, '$.%s') IS NULL OR JSON_EXTRACT(metadata, '$.%s') != ?", constants.METADATA_APPSTORE_APP_ID_KEY, constants.METADATA_APPSTORE_APP_ID_KEY), constants.SUBWALLET_APPSTORE_APP_ID)
+			} else {
+				query = query.Where(fmt.Sprintf("metadata IS NULL OR metadata->>'%s' IS NULL OR metadata->>'%s' != ?", constants.METADATA_APPSTORE_APP_ID_KEY, constants.METADATA_APPSTORE_APP_ID_KEY), constants.SUBWALLET_APPSTORE_APP_ID)
+			}
 		}
 	}
 
@@ -445,6 +544,17 @@ func (api *api) ListApps(limit uint64, offset uint64, filters ListAppsFilters, o
 		logger.Logger.WithError(result.Error).Error("Failed to count DB apps")
 		return nil, result.Error
 	}
+
+	var totalBalance *int64
+	if filters.SubWallets != nil && *filters.SubWallets {
+		totalBalanceMsat, err := queries.GetTotalSubwalletBalance(api.db)
+		if err != nil {
+			logger.Logger.WithError(err).Error("Failed to calculate total subwallet balance")
+			return nil, err
+		}
+		totalBalance = &totalBalanceMsat
+	}
+
 	query = query.Offset(int(offset)).Limit(int(limit))
 
 	err := query.Find(&dbApps).Error
@@ -493,7 +603,14 @@ func (api *api) ListApps(limit uint64, offset uint64, filters ListAppsFilters, o
 		}
 
 		if dbApp.Isolated {
-			apiApp.Balance = queries.GetIsolatedBalance(api.db, dbApp.ID)
+			balance, err := queries.GetIsolatedBalance(api.db, dbApp.ID)
+			if err != nil {
+				logger.Logger.WithError(err).WithFields(logrus.Fields{
+					"app_id": dbApp.ID,
+				}).Error("Failed to get isolated app balance")
+				return nil, err
+			}
+			apiApp.Balance = balance
 		}
 
 		for _, appPermission := range permissionsMap[dbApp.ID] {
@@ -502,7 +619,14 @@ func (api *api) ListApps(limit uint64, offset uint64, filters ListAppsFilters, o
 			if appPermission.Scope == constants.PAY_INVOICE_SCOPE {
 				apiApp.BudgetRenewal = appPermission.BudgetRenewal
 				apiApp.MaxAmountSat = uint64(appPermission.MaxAmountSat)
-				apiApp.BudgetUsage = queries.GetBudgetUsageSat(api.db, &appPermission)
+				budgetUsage, err := queries.GetBudgetUsage(api.db, &appPermission)
+				if err != nil {
+					logger.Logger.WithError(err).WithFields(logrus.Fields{
+						"app_id": dbApp.ID,
+					}).Error("Failed to get budget usage for app")
+					return nil, err
+				}
+				apiApp.BudgetUsage = budgetUsage / 1000
 			}
 		}
 
@@ -520,16 +644,18 @@ func (api *api) ListApps(limit uint64, offset uint64, filters ListAppsFilters, o
 		apiApps = append(apiApps, apiApp)
 	}
 	return &ListAppsResponse{
-		Apps:       apiApps,
-		TotalCount: uint64(totalCount),
+		Apps:         apiApps,
+		TotalCount:   uint64(totalCount),
+		TotalBalance: totalBalance,
 	}, nil
 }
 
 func (api *api) ListChannels(ctx context.Context) ([]Channel, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	channels, err := api.svc.GetLNClient().ListChannels(ctx)
+	channels, err := lnClient.ListChannels(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -595,10 +721,11 @@ func (api *api) GetLSPChannelOffer(ctx context.Context) (*alby.LSPChannelOffer, 
 }
 
 func (api *api) ResetRouter(key string) error {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return errors.New("LNClient not started")
 	}
-	err := api.svc.GetLNClient().ResetRouter(key)
+	err := lnClient.ResetRouter(key)
 	if err != nil {
 		return err
 	}
@@ -668,20 +795,32 @@ func (api *api) Stop() error {
 }
 
 func (api *api) GetNodeConnectionInfo(ctx context.Context) (*lnclient.NodeConnectionInfo, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	return api.svc.GetLNClient().GetNodeConnectionInfo(ctx)
+	return lnClient.GetNodeConnectionInfo(ctx)
 }
 
 func (api *api) RefundSwap(refundSwapRequest *RefundSwapRequest) error {
-	return api.svc.GetSwapsService().RefundSwap(refundSwapRequest.SwapId, refundSwapRequest.Address)
+	if api.svc.GetSwapsService() == nil {
+		return errors.New("SwapsService not started")
+	}
+	return api.svc.GetSwapsService().RefundSwap(refundSwapRequest.SwapId, refundSwapRequest.Address, false)
 }
 
 func (api *api) GetAutoSwapConfig() (*GetAutoSwapConfigResponse, error) {
+	if api.svc.GetSwapsService() == nil {
+		return nil, errors.New("SwapsService not started")
+	}
+
 	swapOutBalanceThresholdStr, _ := api.cfg.Get(config.AutoSwapBalanceThresholdKey, "")
 	swapOutAmountStr, _ := api.cfg.Get(config.AutoSwapAmountKey, "")
 	swapOutDestination, _ := api.cfg.Get(config.AutoSwapDestinationKey, "")
+
+	if xpub := api.svc.GetSwapsService().GetDecryptedAutoSwapXpub(); xpub != "" {
+		swapOutDestination = xpub
+	}
 
 	swapOutEnabled := swapOutBalanceThresholdStr != "" && swapOutAmountStr != ""
 	var swapOutBalanceThreshold, swapOutAmount uint64
@@ -705,6 +844,9 @@ func (api *api) GetAutoSwapConfig() (*GetAutoSwapConfigResponse, error) {
 }
 
 func (api *api) LookupSwap(swapId string) (*LookupSwapResponse, error) {
+	if api.svc.GetSwapsService() == nil {
+		return nil, errors.New("SwapsService not started")
+	}
 	dbSwap, err := api.svc.GetSwapsService().GetSwap(swapId)
 	if err != nil {
 		logger.Logger.WithError(err).Error("failed to fetch swap info")
@@ -715,6 +857,9 @@ func (api *api) LookupSwap(swapId string) (*LookupSwapResponse, error) {
 }
 
 func (api *api) ListSwaps() (*ListSwapsResponse, error) {
+	if api.svc.GetSwapsService() == nil {
+		return nil, errors.New("SwapsService not started")
+	}
 	swaps, err := api.svc.GetSwapsService().ListSwaps()
 	if err != nil {
 		return nil, err
@@ -753,6 +898,9 @@ func toApiSwap(swap *swaps.Swap) *Swap {
 }
 
 func (api *api) GetSwapInInfo() (*SwapInfoResponse, error) {
+	if api.svc.GetSwapsService() == nil {
+		return nil, errors.New("SwapsService not started")
+	}
 	swapInInfo, err := api.svc.GetSwapsService().GetSwapInInfo()
 	if err != nil {
 		logger.Logger.WithError(err).Error("failed to calculate fee info")
@@ -769,6 +917,9 @@ func (api *api) GetSwapInInfo() (*SwapInfoResponse, error) {
 }
 
 func (api *api) GetSwapOutInfo() (*SwapInfoResponse, error) {
+	if api.svc.GetSwapsService() == nil {
+		return nil, errors.New("SwapsService not started")
+	}
 	swapOutInfo, err := api.svc.GetSwapsService().GetSwapOutInfo()
 	if err != nil {
 		logger.Logger.WithError(err).Error("failed to calculate fee info")
@@ -788,6 +939,10 @@ func (api *api) InitiateSwapOut(ctx context.Context, initiateSwapOutRequest *Ini
 	lnClient := api.svc.GetLNClient()
 	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
+	}
+
+	if api.svc.GetSwapsService() == nil {
+		return nil, errors.New("SwapsService not started")
 	}
 
 	amount := initiateSwapOutRequest.SwapAmount
@@ -815,6 +970,10 @@ func (api *api) InitiateSwapIn(ctx context.Context, initiateSwapInRequest *Initi
 		return nil, errors.New("LNClient not started")
 	}
 
+	if api.svc.GetSwapsService() == nil {
+		return nil, errors.New("SwapsService not started")
+	}
+
 	amount := initiateSwapInRequest.SwapAmount
 
 	if amount == 0 {
@@ -833,6 +992,30 @@ func (api *api) InitiateSwapIn(ctx context.Context, initiateSwapInRequest *Initi
 }
 
 func (api *api) EnableAutoSwapOut(ctx context.Context, enableAutoSwapsRequest *EnableAutoSwapRequest) error {
+	if api.svc.GetSwapsService() == nil {
+		return errors.New("SwapsService not started")
+	}
+
+	encryptionKey := ""
+	if enableAutoSwapsRequest.Destination != "" {
+		switch enableAutoSwapsRequest.DestinationType {
+		case "address":
+			if err := api.svc.GetSwapsService().ValidateAddress(enableAutoSwapsRequest.Destination); err != nil {
+				return err
+			}
+		case "xpub":
+			if !api.cfg.CheckUnlockPassword(enableAutoSwapsRequest.UnlockPassword) {
+				return errors.New("invalid unlock password")
+			}
+			if err := api.svc.GetSwapsService().ValidateXpub(enableAutoSwapsRequest.Destination); err != nil {
+				return err
+			}
+			encryptionKey = enableAutoSwapsRequest.UnlockPassword
+		default:
+			return errors.New("destination type must be address or xpub")
+		}
+	}
+
 	err := api.cfg.SetUpdate(config.AutoSwapBalanceThresholdKey, strconv.FormatUint(enableAutoSwapsRequest.BalanceThreshold, 10), "")
 	if err != nil {
 		logger.Logger.WithError(err).Error("Failed to save autoswap balance threshold to config")
@@ -845,13 +1028,13 @@ func (api *api) EnableAutoSwapOut(ctx context.Context, enableAutoSwapsRequest *E
 		return err
 	}
 
-	err = api.cfg.SetUpdate(config.AutoSwapDestinationKey, enableAutoSwapsRequest.Destination, "")
+	err = api.cfg.SetUpdate(config.AutoSwapDestinationKey, enableAutoSwapsRequest.Destination, encryptionKey)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Failed to save autoswap destination to config")
 		return err
 	}
 
-	return api.svc.GetSwapsService().EnableAutoSwapOut()
+	return api.svc.GetSwapsService().EnableAutoSwapOut(enableAutoSwapsRequest.UnlockPassword)
 }
 
 func (api *api) DisableAutoSwap() error {
@@ -864,7 +1047,9 @@ func (api *api) DisableAutoSwap() error {
 		}
 	}
 
-	api.svc.GetSwapsService().StopAutoSwapOut()
+	if api.svc.GetSwapsService() != nil {
+		api.svc.GetSwapsService().StopAutoSwapOut()
+	}
 	return nil
 }
 
@@ -873,45 +1058,51 @@ func (api *api) GetSwapMnemonic() string {
 }
 
 func (api *api) GetNodeStatus(ctx context.Context) (*lnclient.NodeStatus, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	return api.svc.GetLNClient().GetNodeStatus(ctx)
+	return lnClient.GetNodeStatus(ctx)
 }
 
 func (api *api) ListPeers(ctx context.Context) ([]lnclient.PeerDetails, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	return api.svc.GetLNClient().ListPeers(ctx)
+	return lnClient.ListPeers(ctx)
 }
 
 func (api *api) ConnectPeer(ctx context.Context, connectPeerRequest *ConnectPeerRequest) error {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return errors.New("LNClient not started")
 	}
-	return api.svc.GetLNClient().ConnectPeer(ctx, connectPeerRequest)
+	return lnClient.ConnectPeer(ctx, connectPeerRequest)
 }
 
 func (api *api) OpenChannel(ctx context.Context, openChannelRequest *OpenChannelRequest) (*OpenChannelResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	return api.svc.GetLNClient().OpenChannel(ctx, openChannelRequest)
+	return lnClient.OpenChannel(ctx, openChannelRequest)
 }
 
 func (api *api) DisconnectPeer(ctx context.Context, peerId string) error {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return errors.New("LNClient not started")
 	}
 	logger.Logger.WithFields(logrus.Fields{
 		"peer_id": peerId,
 	}).Info("Disconnecting peer")
-	return api.svc.GetLNClient().DisconnectPeer(ctx, peerId)
+	return lnClient.DisconnectPeer(ctx, peerId)
 }
 
 func (api *api) CloseChannel(ctx context.Context, peerId, channelId string, force bool) (*CloseChannelResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
 	logger.Logger.WithFields(logrus.Fields{
@@ -919,7 +1110,7 @@ func (api *api) CloseChannel(ctx context.Context, peerId, channelId string, forc
 		"channel_id": channelId,
 		"force":      force,
 	}).Info("Closing channel")
-	return api.svc.GetLNClient().CloseChannel(ctx, &lnclient.CloseChannelRequest{
+	return lnClient.CloseChannel(ctx, &lnclient.CloseChannelRequest{
 		NodeId:    peerId,
 		ChannelId: channelId,
 		Force:     force,
@@ -927,20 +1118,22 @@ func (api *api) CloseChannel(ctx context.Context, peerId, channelId string, forc
 }
 
 func (api *api) UpdateChannel(ctx context.Context, updateChannelRequest *UpdateChannelRequest) error {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return errors.New("LNClient not started")
 	}
 	logger.Logger.WithFields(logrus.Fields{
 		"request": updateChannelRequest,
 	}).Info("updating channel")
-	return api.svc.GetLNClient().UpdateChannel(ctx, updateChannelRequest)
+	return lnClient.UpdateChannel(ctx, updateChannelRequest)
 }
 
 func (api *api) MakeOffer(ctx context.Context, description string) (string, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return "", errors.New("LNClient not started")
 	}
-	offer, err := api.svc.GetLNClient().MakeOffer(ctx, description)
+	offer, err := lnClient.MakeOffer(ctx, description)
 	if err != nil {
 		return "", err
 	}
@@ -949,10 +1142,11 @@ func (api *api) MakeOffer(ctx context.Context, description string) (string, erro
 }
 
 func (api *api) GetNewOnchainAddress(ctx context.Context) (string, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return "", errors.New("LNClient not started")
 	}
-	address, err := api.svc.GetLNClient().GetNewOnchainAddress(ctx)
+	address, err := lnClient.GetNewOnchainAddress(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -1005,10 +1199,11 @@ func (api *api) GetUnusedOnchainAddress(ctx context.Context) (string, error) {
 }
 
 func (api *api) SignMessage(ctx context.Context, message string) (*SignMessageResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	signature, err := api.svc.GetLNClient().SignMessage(ctx, message)
+	signature, err := lnClient.SignMessage(ctx, message)
 	if err != nil {
 		return nil, err
 	}
@@ -1019,10 +1214,11 @@ func (api *api) SignMessage(ctx context.Context, message string) (*SignMessageRe
 }
 
 func (api *api) RedeemOnchainFunds(ctx context.Context, toAddress string, amount uint64, feeRate *uint64, sendAll bool) (*RedeemOnchainFundsResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	txId, err := api.svc.GetLNClient().RedeemOnchainFunds(ctx, toAddress, amount, feeRate, sendAll)
+	txId, err := lnClient.RedeemOnchainFunds(ctx, toAddress, amount, feeRate, sendAll)
 	if err != nil {
 		return nil, err
 	}
@@ -1032,10 +1228,11 @@ func (api *api) RedeemOnchainFunds(ctx context.Context, toAddress string, amount
 }
 
 func (api *api) GetBalances(ctx context.Context) (*BalancesResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	balances, err := api.svc.GetLNClient().GetBalances(ctx, false)
+	balances, err := lnClient.GetBalances(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1076,6 +1273,15 @@ func (api *api) RequestMempoolApi(ctx context.Context, endpoint string) (interfa
 		return nil, errors.New("failed to read response body")
 	}
 
+	if res.StatusCode != http.StatusOK {
+		logger.Logger.WithFields(logrus.Fields{
+			"endpoint":    endpoint,
+			"status_code": res.StatusCode,
+			"body":        string(body),
+		}).Error("Mempool endpoint returned non-success code")
+		return nil, fmt.Errorf("mempool endpoint returned non-success code: %s", string(body))
+	}
+
 	var jsonContent interface{}
 	jsonErr := json.Unmarshal(body, &jsonContent)
 	if jsonErr != nil {
@@ -1092,34 +1298,51 @@ func (api *api) GetInfo(ctx context.Context) (*InfoResponse, error) {
 	backendType, _ := api.cfg.Get("LNBackendType", "")
 	ldkVssEnabled, _ := api.cfg.Get("LdkVssEnabled", "")
 	autoUnlockPassword, _ := api.cfg.Get("AutoUnlockPassword", "")
-	info.SetupCompleted = api.cfg.SetupCompleted()
+	setupCompleted, err := api.cfg.SetupCompleted()
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to check if setup is completed")
+		return nil, err
+	}
+	info.SetupCompleted = setupCompleted
 	info.Currency = api.cfg.GetCurrency()
+	info.BitcoinDisplayFormat = api.cfg.GetBitcoinDisplayFormat()
 	info.StartupState = api.svc.GetStartupState()
 	if api.startupError != nil {
 		info.StartupError = api.startupError.Error()
 		info.StartupErrorTime = api.startupErrorTime
 	}
-	info.Running = api.svc.GetLNClient() != nil
+	lnClient := api.svc.GetLNClient()
+	info.Running = lnClient != nil
 	info.BackendType = backendType
 	info.AlbyAuthUrl = api.albyOAuthSvc.GetAuthUrl()
 	info.OAuthRedirect = !api.cfg.GetEnv().IsDefaultClientId()
 	info.Version = version.Tag
 	info.EnableAdvancedSetup = api.cfg.GetEnv().EnableAdvancedSetup
+	info.HideUpdateBanner = api.cfg.GetEnv().HideUpdateBanner
 	info.LdkVssEnabled = ldkVssEnabled == "true"
 	info.VssSupported = backendType == config.LDKBackendType && api.cfg.GetEnv().LDKVssUrl != ""
 	info.AutoUnlockPasswordEnabled = autoUnlockPassword != ""
 	info.AutoUnlockPasswordSupported = api.cfg.GetEnv().IsDefaultClientId()
-	albyUserIdentifier, err := api.albyOAuthSvc.GetUserIdentifier()
+	info.Relays = []InfoResponseRelay{}
+	for _, relayStatus := range api.svc.GetRelayStatuses() {
+		info.Relays = append(info.Relays, InfoResponseRelay{
+			Url:    relayStatus.Url,
+			Online: relayStatus.Online,
+		})
+	}
+
 	info.MempoolUrl = api.cfg.GetMempoolUrl()
-	info.Relay = api.cfg.GetRelayUrl()
+	info.AlbyAccountConnected = api.albyOAuthSvc.IsConnected(ctx)
+
+	albyUserIdentifier, err := api.albyOAuthSvc.GetUserIdentifier()
 	if err != nil {
 		logger.Logger.WithError(err).Error("Failed to get alby user identifier")
 		return nil, err
 	}
 	info.AlbyUserIdentifier = albyUserIdentifier
-	info.AlbyAccountConnected = api.albyOAuthSvc.IsConnected(ctx)
-	if api.svc.GetLNClient() != nil {
-		nodeInfo, err := api.svc.GetLNClient().GetInfo(ctx)
+
+	if lnClient != nil {
+		nodeInfo, err := lnClient.GetInfo(ctx)
 		if err != nil {
 			logger.Logger.WithError(err).Error("Failed to get nodeInfo")
 			return nil, err
@@ -1144,6 +1367,38 @@ func (api *api) SetCurrency(currency string) error {
 	if err != nil {
 		logger.Logger.WithError(err).Error("Failed to update currency")
 		return err
+	}
+
+	return nil
+}
+
+func (api *api) SetBitcoinDisplayFormat(format string) error {
+	if format != constants.BITCOIN_DISPLAY_FORMAT_SATS && format != constants.BITCOIN_DISPLAY_FORMAT_BIP177 {
+		return fmt.Errorf("bitcoin display format must be '%s' or '%s'", constants.BITCOIN_DISPLAY_FORMAT_SATS, constants.BITCOIN_DISPLAY_FORMAT_BIP177)
+	}
+
+	err := api.cfg.SetBitcoinDisplayFormat(format)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to update bitcoin display format")
+		return err
+	}
+
+	return nil
+}
+
+func (api *api) UpdateSettings(updateSettingsRequest *UpdateSettingsRequest) error {
+	if updateSettingsRequest.Currency != "" {
+		err := api.SetCurrency(updateSettingsRequest.Currency)
+		if err != nil {
+			return fmt.Errorf("failed to set currency: %w", err)
+		}
+	}
+
+	if updateSettingsRequest.BitcoinDisplayFormat != "" {
+		err := api.SetBitcoinDisplayFormat(updateSettingsRequest.BitcoinDisplayFormat)
+		if err != nil {
+			return fmt.Errorf("failed to set bitcoin display format: %w", err)
+		}
 	}
 
 	return nil
@@ -1188,7 +1443,7 @@ var startMutex sync.Mutex
 
 func (api *api) Start(startRequest *StartRequest) {
 	api.startupError = nil
-	err := api.StartInternal(startRequest)
+	err := api.startInternal(startRequest)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Failed to start node")
 		api.startupError = err
@@ -1196,7 +1451,7 @@ func (api *api) Start(startRequest *StartRequest) {
 	}
 }
 
-func (api *api) StartInternal(startRequest *StartRequest) (err error) {
+func (api *api) startInternal(startRequest *StartRequest) (err error) {
 	if !startMutex.TryLock() {
 		// do not allow to start twice in case this is somehow called twice
 		return errors.New("app is busy")
@@ -1300,12 +1555,13 @@ func (api *api) Setup(ctx context.Context, setupRequest *SetupRequest) error {
 }
 
 func (api *api) GetWalletCapabilities(ctx context.Context) (*WalletCapabilitiesResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
 
-	methods := api.svc.GetLNClient().GetSupportedNIP47Methods()
-	notificationTypes := api.svc.GetLNClient().GetSupportedNIP47NotificationTypes()
+	methods := lnClient.GetSupportedNIP47Methods()
+	notificationTypes := lnClient.GetSupportedNIP47NotificationTypes()
 
 	scopes, err := permissions.RequestMethodsToScopes(methods)
 	if err != nil {
@@ -1323,12 +1579,13 @@ func (api *api) GetWalletCapabilities(ctx context.Context) (*WalletCapabilitiesR
 }
 
 func (api *api) SendPaymentProbes(ctx context.Context, sendPaymentProbesRequest *SendPaymentProbesRequest) (*SendPaymentProbesResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
 
 	var errMessage string
-	err := api.svc.GetLNClient().SendPaymentProbes(ctx, sendPaymentProbesRequest.Invoice)
+	err := lnClient.SendPaymentProbes(ctx, sendPaymentProbesRequest.Invoice)
 	if err != nil {
 		errMessage = err.Error()
 	}
@@ -1363,12 +1620,13 @@ func (api *api) MigrateNodeStorage(ctx context.Context, to string) error {
 }
 
 func (api *api) SendSpontaneousPaymentProbes(ctx context.Context, sendSpontaneousPaymentProbesRequest *SendSpontaneousPaymentProbesRequest) (*SendSpontaneousPaymentProbesResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
 
 	var errMessage string
-	err := api.svc.GetLNClient().SendSpontaneousPaymentProbes(ctx, sendSpontaneousPaymentProbesRequest.Amount, sendSpontaneousPaymentProbesRequest.NodeId)
+	err := lnClient.SendSpontaneousPaymentProbes(ctx, sendSpontaneousPaymentProbesRequest.Amount, sendSpontaneousPaymentProbesRequest.NodeId)
 	if err != nil {
 		errMessage = err.Error()
 	}
@@ -1377,24 +1635,27 @@ func (api *api) SendSpontaneousPaymentProbes(ctx context.Context, sendSpontaneou
 }
 
 func (api *api) GetNetworkGraph(ctx context.Context, nodeIds []string) (NetworkGraphResponse, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	return api.svc.GetLNClient().GetNetworkGraph(ctx, nodeIds)
+	return lnClient.GetNetworkGraph(ctx, nodeIds)
 }
 
 func (api *api) SyncWallet() error {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return errors.New("LNClient not started")
 	}
-	api.svc.GetLNClient().UpdateLastWalletSyncRequest()
+	lnClient.UpdateLastWalletSyncRequest()
 	return nil
 }
 func (api *api) ListOnchainTransactions(ctx context.Context) ([]lnclient.OnchainTransaction, error) {
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
-	return api.svc.GetLNClient().ListOnchainTransactions(ctx)
+	return lnClient.ListOnchainTransactions(ctx)
 }
 
 func (api *api) GetLogOutput(ctx context.Context, logType string, getLogRequest *GetLogOutputRequest) (*GetLogOutputResponse, error) {
@@ -1402,11 +1663,12 @@ func (api *api) GetLogOutput(ctx context.Context, logType string, getLogRequest 
 	var logData []byte
 
 	if logType == LogTypeNode {
-		if api.svc.GetLNClient() == nil {
+		lnClient := api.svc.GetLNClient()
+		if lnClient == nil {
 			return nil, errors.New("LNClient not started")
 		}
 
-		logData, err = api.svc.GetLNClient().GetLogOutput(ctx, getLogRequest.MaxLen)
+		logData, err = lnClient.GetLogOutput(ctx, getLogRequest.MaxLen)
 		if err != nil {
 			return nil, err
 		}
@@ -1438,9 +1700,19 @@ func (api *api) Health(ctx context.Context) (*HealthResponse, error) {
 		alarms = append(alarms, NewHealthAlarm(HealthAlarmKindAlbyService, albyInfo.Incidents))
 	}
 
-	isNostrRelayReady := api.svc.IsRelayReady()
-	if !isNostrRelayReady {
-		alarms = append(alarms, NewHealthAlarm(HealthAlarmKindNostrRelayOffline, nil))
+	relayStatuses := api.svc.GetRelayStatuses()
+	if len(relayStatuses) > 0 {
+		isAnyNostrRelayOffline := false
+		offlineRelayUrls := []string{}
+		for _, relayStatus := range relayStatuses {
+			if !relayStatus.Online {
+				isAnyNostrRelayOffline = true
+				offlineRelayUrls = append(offlineRelayUrls, relayStatus.Url)
+			}
+		}
+		if isAnyNostrRelayOffline {
+			alarms = append(alarms, NewHealthAlarm(HealthAlarmKindNostrRelayOffline, offlineRelayUrls))
+		}
 	}
 
 	ldkVssEnabled, _ := api.cfg.Get("LdkVssEnabled", "")

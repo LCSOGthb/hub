@@ -1,21 +1,20 @@
 import {
   CirclePlusIcon,
-  HelpCircle,
+  HelpCircleIcon,
   InfoIcon,
   ShieldCheckIcon,
   SparklesIcon,
-  TriangleAlert,
   TriangleAlertIcon,
 } from "lucide-react";
 import { useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import AppHeader from "src/components/AppHeader";
 import AppCard from "src/components/connections/AppCard";
 import { CustomPagination } from "src/components/CustomPagination";
-import ExternalLink from "src/components/ExternalLink";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import FormattedFiatAmount from "src/components/FormattedFiatAmount";
 import Loading from "src/components/Loading";
 import ResponsiveButton from "src/components/ResponsiveButton";
+import ResponsiveLinkButton from "src/components/ResponsiveLinkButton";
 import { Alert, AlertDescription, AlertTitle } from "src/components/ui/alert";
 import { Button } from "src/components/ui/button";
 import {
@@ -24,8 +23,10 @@ import {
   CardHeader,
   CardTitle,
 } from "src/components/ui/card";
+import { ExternalLinkButton } from "src/components/ui/custom/external-link-button";
+import { LinkButton } from "src/components/ui/custom/link-button";
 import { UpgradeDialog } from "src/components/UpgradeDialog";
-import { LIST_APPS_LIMIT, SUBWALLET_APPSTORE_APP_ID } from "src/constants";
+import { LIST_APPS_LIMIT, MAX_FREE_SUBWALLETS } from "src/constants";
 import { useAlbyMe } from "src/hooks/useAlbyMe";
 import { useApps } from "src/hooks/useApps";
 import { useBalances } from "src/hooks/useBalances";
@@ -36,11 +37,11 @@ export function SubwalletList() {
   const { data: info } = useInfo();
   const [page, setPage] = useState(1);
   const appsListRef = useRef<HTMLDivElement>(null);
-  const { data: appsData } = useApps(
+  const { data: subwalletAppsData } = useApps(
     undefined,
     page,
     {
-      appStoreAppId: SUBWALLET_APPSTORE_APP_ID,
+      subWallets: true,
     },
     "created_at"
   );
@@ -57,73 +58,79 @@ export function SubwalletList() {
 
   if (
     !info ||
-    !appsData ||
+    !subwalletAppsData ||
     !balances ||
     (info.albyAccountConnected && !albyMe && !albyMeError)
   ) {
     return <Loading />;
   }
 
-  const subwalletApps = appsData.apps;
+  const subwalletApps = subwalletAppsData.apps;
 
-  if (!subwalletApps.length) {
+  if (!subwalletAppsData.totalCount) {
     return <SubwalletIntro />;
   }
 
-  const subwalletTotalAmount =
-    subwalletApps.reduce((total, app) => total + app.balance, 0) || 0;
+  const subwalletTotalAmount = subwalletAppsData.totalBalance || 0;
   const isSufficientlyBacked =
     subwalletTotalAmount <= balances.lightning.totalSpendable;
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3">
       <AppHeader
         title="Sub-wallets"
+        pageTitle="Sub-wallets"
         description="Create sub-wallets for yourself, friends, family or coworkers"
         contentRight={
           <>
-            <ExternalLink to="https://guides.getalby.com/user-guide/alby-hub/sub-wallets">
-              <Button variant="outline" size="icon">
-                <HelpCircle className="size-4" />
-              </Button>
-            </ExternalLink>
-            {!albyMe?.subscription.plan_code && subwalletApps?.length >= 3 ? (
+            <ExternalLinkButton
+              to="https://guides.getalby.com/user-guide/alby-hub/sub-wallets"
+              variant="outline"
+              size="icon"
+            >
+              <HelpCircleIcon className="size-4" />
+            </ExternalLinkButton>
+            {!albyMe?.subscription.plan_code &&
+            subwalletAppsData.totalCount >= MAX_FREE_SUBWALLETS ? (
               <UpgradeDialog>
                 <ResponsiveButton icon={CirclePlusIcon} text="New Sub-wallet" />
               </UpgradeDialog>
             ) : (
-              <Link to="/sub-wallets/new">
-                <ResponsiveButton icon={CirclePlusIcon} text="New Sub-wallet" />
-              </Link>
+              <ResponsiveLinkButton
+                to="/sub-wallets/new"
+                icon={CirclePlusIcon}
+                text="New Sub-wallet"
+              />
             )}
           </>
         }
       />
 
-      {!albyMe?.subscription.plan_code && subwalletApps.length >= 3 && (
-        <>
-          <Alert>
-            <InfoIcon />
-            <AlertTitle>Need more Sub-wallets?</AlertTitle>
-            <AlertDescription className="flex flex-row gap-3">
-              <p className="grow">
-                Upgrade your subscription plan to Pro unlock unlimited number of
-                Sub-wallets.
-              </p>
-              <UpgradeDialog>
-                <Button>
-                  <SparklesIcon />
-                  Upgrade
-                </Button>
-              </UpgradeDialog>
-            </AlertDescription>
-          </Alert>
-        </>
-      )}
+      {!albyMe?.subscription.plan_code &&
+        subwalletAppsData.totalCount >= MAX_FREE_SUBWALLETS && (
+          <>
+            <Alert>
+              <InfoIcon />
+              <AlertTitle>Need more Sub-wallets?</AlertTitle>
+              <AlertDescription className="flex flex-row gap-3">
+                <p className="grow">
+                  Upgrade your subscription plan to Pro unlock unlimited number
+                  of Sub-wallets.
+                </p>
+                <UpgradeDialog>
+                  <Button>
+                    <SparklesIcon />
+                    Upgrade
+                  </Button>
+                </UpgradeDialog>
+              </AlertDescription>
+            </Alert>
+          </>
+        )}
 
       {!isSufficientlyBacked && (
         <Alert variant="warning">
-          <TriangleAlert />
+          <TriangleAlertIcon />
           <AlertTitle>
             Sub-wallets you manage are insufficiently backed
           </AlertTitle>
@@ -132,14 +139,14 @@ export function SubwalletList() {
             balances of sub-wallets under your management. Increase spending
             capacity by opening a channel or review your channel statuses to
             back them up again.
-            <Link to="/wallet/receive">
-              <Button variant="secondary">Deposit Bitcoin</Button>
-            </Link>
+            <LinkButton to="/wallet/receive" variant="secondary">
+              Deposit Bitcoin
+            </LinkButton>
           </AlertDescription>
         </Alert>
       )}
 
-      <div className="flex flex-col sm:flex-row flex-wrap gap-4 slashed-zero">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-3 slashed-zero">
         <Card className="flex flex-1 flex-col">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg">
@@ -149,10 +156,7 @@ export function SubwalletList() {
           <CardContent className="grow">
             <div className="mb-1">
               <span className="text-2xl font-medium balance sensitive">
-                {new Intl.NumberFormat().format(
-                  Math.floor(subwalletTotalAmount / 1000)
-                )}{" "}
-                sats
+                <FormattedBitcoinAmount amount={subwalletTotalAmount} />
               </span>
             </div>
             <FormattedFiatAmount amount={subwalletTotalAmount / 1000} />
@@ -165,8 +169,8 @@ export function SubwalletList() {
           <CardContent className="grow flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <span className="text-2xl font-medium">
-                {subwalletApps.length} /{" "}
-                {albyMe?.subscription.plan_code ? "∞" : 3}
+                {subwalletAppsData.totalCount} /{" "}
+                {albyMe?.subscription.plan_code ? "∞" : MAX_FREE_SUBWALLETS}
               </span>
               {isSufficientlyBacked ? (
                 <div className="flex items-center text-positive-foreground text-sm">
@@ -189,7 +193,7 @@ export function SubwalletList() {
         <h3 className="font-semibold text-2xl mb-4">Managed Sub-wallets</h3>
         <div
           ref={appsListRef}
-          className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch app-list"
+          className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch"
         >
           {subwalletApps.map((app, index) => (
             <AppCard key={index} app={app} />
@@ -199,7 +203,7 @@ export function SubwalletList() {
 
       <CustomPagination
         limit={LIST_APPS_LIMIT}
-        totalCount={appsData.totalCount}
+        totalCount={subwalletAppsData.totalCount}
         page={page}
         handlePageChange={handlePageChange}
       />

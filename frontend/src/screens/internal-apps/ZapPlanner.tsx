@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "src/components/ui/card";
 import { useApps } from "src/hooks/useApps";
+import { useCurrencies } from "src/hooks/useCurrencies";
 import { createApp } from "src/requests/createApp";
 import { CreateAppRequest, UpdateAppRequest } from "src/types";
 import { handleRequestError } from "src/utils/handleRequestError";
@@ -19,12 +20,14 @@ import {
 import { ExternalLinkIcon, PlusCircleIcon } from "lucide-react";
 import { toast } from "sonner";
 import alby from "src/assets/suggested-apps/alby.png";
+import bff from "src/assets/zapplanner/bff.png";
 import bitcoinbrink from "src/assets/zapplanner/bitcoinbrink.png";
 import hrf from "src/assets/zapplanner/hrf.png";
 import opensats from "src/assets/zapplanner/opensats.png";
 import { AppStoreDetailHeader } from "src/components/connections/AppStoreDetailHeader";
 import { appStoreApps } from "src/components/connections/SuggestedAppData";
 import ExternalLink from "src/components/ExternalLink";
+import ResponsiveButton from "src/components/ResponsiveButton";
 import { Button } from "src/components/ui/button";
 import { ExternalLinkButton } from "src/components/ui/custom/external-link-button";
 import { LoadingButton } from "src/components/ui/custom/loading-button";
@@ -86,6 +89,13 @@ const recipients: Recipient[] = [
     lightningAddress: "bitcoinbrink@zbd.gg",
     logo: bitcoinbrink,
   },
+  {
+    name: "Bitcoin For Fairness",
+    description:
+      "Bitcoin for Fairness is an initiative raising knowledge and understanding of Bitcoin with a focus on civil and human rights.",
+    lightningAddress: "bffbtc@getalby.com",
+    logo: bff,
+  },
 ];
 
 export function ZapPlanner() {
@@ -105,38 +115,12 @@ export function ZapPlanner() {
   const [frequencyValue, setFrequencyValue] = React.useState("1");
   const [frequencyUnit, setFrequencyUnit] = React.useState("months");
   const [currency, setCurrency] = React.useState<string>("USD");
-  const [currencies, setCurrencies] = React.useState<string[]>([]);
+  const { currencies, isLoading: isCurrenciesLoading } = useCurrencies(true);
 
   const [convertedAmount, setConvertedAmount] = React.useState<string>("");
   const [satoshiAmount, setSatoshiAmount] = React.useState<number | undefined>(
     undefined
   );
-
-  React.useEffect(() => {
-    // fetch the fiat list and prepend sats/BTC
-    async function fetchCurrencies() {
-      try {
-        const res = await fetch("https://getalby.com/api/rates");
-        const data: Record<string, { name: string; priority: number }> =
-          await res.json();
-        const fiatCodes = Object.keys(data)
-          // drop "BTC" - ZapPlanner uses SATS for the bitcoin currency
-          .filter((code) => code !== "BTC")
-          .sort((a, b) => {
-            const priorityDiff = data[a].priority - data[b].priority;
-            if (priorityDiff !== 0) {
-              return priorityDiff;
-            }
-            return a.localeCompare(b);
-          })
-          .map((c) => c.toUpperCase());
-        setCurrencies(["SATS", ...fiatCodes]);
-      } catch (err) {
-        console.error("Failed to load currencies", err);
-      }
-    }
-    fetchCurrencies();
-  }, []);
 
   React.useEffect(() => {
     // reset form on close
@@ -155,6 +139,10 @@ export function ZapPlanner() {
   }, [open]);
 
   React.useEffect(() => {
+    if (isCurrenciesLoading) {
+      return;
+    }
+
     // If amount is empty, clear conversion output
     if (!amount) {
       setConvertedAmount("");
@@ -191,7 +179,7 @@ export function ZapPlanner() {
     };
 
     convertCurrency();
-  }, [amount, currency, open]);
+  }, [amount, currency, open, isCurrenciesLoading]);
 
   const appStoreApp = appStoreApps.find((app) => app.id === "zapplanner");
   if (!appStoreApp) {
@@ -308,13 +296,8 @@ export function ZapPlanner() {
       }
 
       // add the ZapPlanner subscription ID to the app metadata
+      // Only send metadata since that's the only thing changing
       const updateAppRequest: UpdateAppRequest = {
-        name: createAppRequest.name,
-        scopes: createAppRequest.scopes,
-        budgetRenewal,
-        expiresAt: createAppRequest.expiresAt,
-        maxAmount,
-        isolated,
         metadata: {
           ...createAppRequest.metadata,
           zapplanner_subscription_id: subscriptionId,
@@ -351,12 +334,13 @@ export function ZapPlanner() {
         contentRight={
           <>
             <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <PlusCircleIcon />
-                  New Recurring Payment
-                </Button>
-              </DialogTrigger>
+              <ResponsiveButton
+                asChild
+                icon={PlusCircleIcon}
+                text="New Recurring Payment"
+              >
+                <DialogTrigger />
+              </ResponsiveButton>
               <DialogContent className="sm:max-w-[600px]">
                 <form onSubmit={handleSubmit}>
                   <DialogHeader>
@@ -423,14 +407,24 @@ export function ZapPlanner() {
                           )}
                         </div>
 
-                        <Select value={currency} onValueChange={setCurrency}>
+                        <Select
+                          value={currency}
+                          onValueChange={setCurrency}
+                          disabled={isCurrenciesLoading}
+                        >
                           <SelectTrigger className="w-1/2">
-                            <SelectValue />
+                            <SelectValue
+                              placeholder={
+                                isCurrenciesLoading
+                                  ? "Loading currencies..."
+                                  : "Select a currency"
+                              }
+                            />
                           </SelectTrigger>
                           <SelectContent>
-                            {currencies.map((code) => (
+                            {currencies.map(([code]) => (
                               <SelectItem key={code} value={code}>
-                                {code === "BTC" ? "BTC (sats)" : code}
+                                {code}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -550,7 +544,7 @@ export function ZapPlanner() {
       {!!zapplannerApps?.length && (
         <>
           <h2 className="font-semibold text-xl">Recurring Payments</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch app-list">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
             {zapplannerApps.map((app, index) => (
               <AppCard
                 key={index}

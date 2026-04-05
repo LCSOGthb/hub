@@ -17,8 +17,8 @@ import (
 )
 
 func (api *api) RequestLSPOrder(ctx context.Context, request *LSPOrderRequest) (*LSPOrderResponse, error) {
-
-	if api.svc.GetLNClient() == nil {
+	lnClient := api.svc.GetLNClient()
+	if lnClient == nil {
 		return nil, errors.New("LNClient not started")
 	}
 
@@ -28,7 +28,7 @@ func (api *api) RequestLSPOrder(ctx context.Context, request *LSPOrderRequest) (
 
 	logger.Logger.Info("Requesting own node info")
 
-	nodeInfo, err := api.svc.GetLNClient().GetInfo(ctx)
+	nodeInfo, err := lnClient.GetInfo(ctx)
 	if err != nil {
 		logger.Logger.WithError(err).WithFields(logrus.Fields{
 			"lspIdentifier": request.LSPIdentifier,
@@ -46,7 +46,7 @@ func (api *api) RequestLSPOrder(ctx context.Context, request *LSPOrderRequest) (
 
 	logger.Logger.WithField("lspInfo", lspInfo).Info("Connecting to LSP node as a peer")
 
-	err = api.svc.GetLNClient().ConnectPeer(ctx, &lnclient.ConnectPeerRequest{
+	err = lnClient.ConnectPeer(ctx, &lnclient.ConnectPeerRequest{
 		Pubkey:  lspInfo.Pubkey,
 		Address: lspInfo.Address,
 		Port:    lspInfo.Port,
@@ -57,7 +57,7 @@ func (api *api) RequestLSPOrder(ctx context.Context, request *LSPOrderRequest) (
 		return nil, err
 	}
 
-	invoice, fee, err := api.requestLSPS1Invoice(ctx, request, nodeInfo.Network, nodeInfo.Pubkey, lspInfo.MaxChannelExpiryBlocks, lspInfo.MinRequiredChannelConfirmations, lspInfo.MinFundingConfirmsWithinBlocks)
+	invoice, fee, err := api.requestLSPS1Invoice(ctx, lnClient, request, nodeInfo.Network, nodeInfo.Pubkey, lspInfo.MaxChannelExpiryBlocks, lspInfo.MinRequiredChannelConfirmations, lspInfo.MinFundingConfirmsWithinBlocks)
 	invoiceAmount := uint64(0)
 	incomingLiquidity := request.Amount
 
@@ -91,8 +91,8 @@ func (api *api) RequestLSPOrder(ctx context.Context, request *LSPOrderRequest) (
 	return newChannelResponse, nil
 }
 
-func (api *api) requestLSPS1Invoice(ctx context.Context, request *LSPOrderRequest, network, pubkey string, channelExpiryBlocks uint64, minRequiredChannelConfirmations uint64, minFundingConfirmsWithinBlocks uint64) (invoice string, fee uint64, err error) {
-	refundAddress, err := api.svc.GetLNClient().GetNewOnchainAddress(ctx)
+func (api *api) requestLSPS1Invoice(ctx context.Context, lnClient lnclient.LNClient, request *LSPOrderRequest, network, pubkey string, channelExpiryBlocks uint64, minRequiredChannelConfirmations uint64, minFundingConfirmsWithinBlocks uint64) (invoice string, fee uint64, err error) {
+	refundAddress, err := lnClient.GetNewOnchainAddress(ctx)
 	if err != nil {
 		logger.Logger.WithError(err).Error("Failed to request onchain address")
 		return "", 0, err
@@ -130,6 +130,12 @@ func (api *api) requestLSPS1Invoice(ctx context.Context, request *LSPOrderReques
 		token = "AlbyHub/" + version.Tag
 	}
 
+	// set a non-empty token to notify Flashsats that we support 0-conf
+	// (Pre-v1.21.0 does not support 0-conf)
+	if request.LSPIdentifier == "flashsats" {
+		token = "AlbyHub/" + version.Tag
+	}
+
 	lsps1ChannelRequest := &alby.LSPChannelRequest{
 		PublicKey:                    pubkey,
 		LSPBalanceSat:                strconv.FormatUint(request.Amount, 10),
@@ -147,13 +153,15 @@ func (api *api) requestLSPS1Invoice(ctx context.Context, request *LSPOrderReques
 		return "", 0, err
 	}
 
-	invoice = channelResponse.Payment.Bolt11.Invoice
-	fee, err = strconv.ParseUint(channelResponse.Payment.Bolt11.FeeTotalSat, 10, 64)
-	if err != nil {
-		logger.Logger.WithError(err).WithFields(logrus.Fields{
-			"lspIdentifier": request.LSPIdentifier,
-		}).Error("Failed to parse fee")
-		return "", 0, fmt.Errorf("failed to parse fee %v", err)
+	if channelResponse.Payment != nil {
+		invoice = channelResponse.Payment.Bolt11.Invoice
+		fee, err = strconv.ParseUint(channelResponse.Payment.Bolt11.FeeTotalSat, 10, 64)
+		if err != nil {
+			logger.Logger.WithError(err).WithFields(logrus.Fields{
+				"lspIdentifier": request.LSPIdentifier,
+			}).Error("Failed to parse fee")
+			return "", 0, fmt.Errorf("failed to parse fee %v", err)
+		}
 	}
 
 	return invoice, fee, nil

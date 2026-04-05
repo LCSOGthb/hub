@@ -9,15 +9,15 @@ export function useBanner() {
   const { data: albyInfo } = useAlbyInfo();
   const { data: albyMe } = useAlbyMe();
   const [showBanner, setShowBanner] = React.useState(false);
+  const isDismissedRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!info || !albyInfo) {
-      setShowBanner(false);
+    if (!info || !albyInfo || info.hideUpdateBanner || isDismissedRef.current) {
       return;
     }
 
     // vss migration (alby cloud only)
-    // TODO: remove after 2026-01-01
+    // TODO: remove after 2026-08-01
     const vssMigrationRequired =
       info.oauthRedirect &&
       !!albyMe?.subscription.plan_code.includes("buzz") &&
@@ -33,6 +33,7 @@ export function useBanner() {
   }, [info, albyInfo, albyMe?.subscription.plan_code]);
 
   const dismissBanner = () => {
+    isDismissedRef.current = true;
     setShowBanner(false);
   };
 

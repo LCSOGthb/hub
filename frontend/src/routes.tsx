@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, RouteObject } from "react-router-dom";
 import AppLayout from "src/components/layouts/AppLayout";
 import SettingsLayout from "src/components/layouts/SettingsLayout";
 import TwoColumnFullScreenLayout from "src/components/layouts/TwoColumnFullScreenLayout";
@@ -16,7 +16,7 @@ import Start from "src/screens/Start";
 import Unlock from "src/screens/Unlock";
 import { Welcome } from "src/screens/Welcome";
 import AlbyAuthRedirect from "src/screens/alby/AlbyAuthRedirect";
-import { AlbyReviews } from "src/screens/alby/AlbyReviews";
+import { AlbyEarn } from "src/screens/alby/AlbyEarn";
 import SupportAlby from "src/screens/alby/SupportAlby";
 import AppDetails from "src/screens/apps/AppDetails";
 import { AppsCleanup } from "src/screens/apps/AppsCleanup";
@@ -33,6 +33,7 @@ import { OpeningAutoChannel } from "src/screens/channels/auto/OpeningAutoChannel
 import { FirstChannel } from "src/screens/channels/first/FirstChannel";
 import { OpenedFirstChannel } from "src/screens/channels/first/OpenedFirstChannel";
 import { OpeningFirstChannel } from "src/screens/channels/first/OpeningFirstChannel";
+import { AlbyCliSkill } from "src/screens/internal-apps/AlbyCliSkill";
 import { Bitrefill } from "src/screens/internal-apps/Bitrefill";
 import { BuzzPay } from "src/screens/internal-apps/BuzzPay";
 import { Claude } from "src/screens/internal-apps/Claude";
@@ -89,7 +90,7 @@ import AutoSwap from "src/screens/wallet/swap/AutoSwap";
 import SwapInStatus from "src/screens/wallet/swap/SwapInStatus";
 import SwapOutStatus from "src/screens/wallet/swap/SwapOutStatus";
 
-const routes = [
+const routes: RouteObject[] = [
   {
     path: "/",
     element: <AppLayout />,
@@ -348,6 +349,10 @@ const routes = [
             element: <Claude />,
           },
           {
+            path: "alby-cli-skill",
+            element: <AlbyCliSkill />,
+          },
+          {
             path: "tictactoe",
             element: <Tictactoe />,
           },
@@ -457,9 +462,9 @@ const routes = [
         element: <SupportAlby />,
       },
       {
-        path: "review-earn",
-        element: <AlbyReviews />,
-        handle: { crumb: () => "Review & Earn" },
+        path: "earn",
+        element: <AlbyEarn />,
+        handle: { crumb: () => "Earn" },
       },
     ],
   },

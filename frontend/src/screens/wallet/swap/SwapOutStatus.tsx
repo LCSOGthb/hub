@@ -7,6 +7,7 @@ import {
 import { useParams } from "react-router-dom";
 import AppHeader from "src/components/AppHeader";
 import ExternalLink from "src/components/ExternalLink";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import FormattedFiatAmount from "src/components/FormattedFiatAmount";
 import Loading from "src/components/Loading";
 import LottieLoading from "src/components/LottieLoading";
@@ -47,7 +48,7 @@ export default function SwapOutStatus() {
 
   return (
     <div className="grid gap-5">
-      <AppHeader title="Swap Out" />
+      <AppHeader pageTitle="Swap Out" title="Swap Out" />
       <div className="w-full max-w-lg">
         <Card className="w-full md:max-w-xs">
           <CardHeader>
@@ -55,17 +56,21 @@ export default function SwapOutStatus() {
               {swapStatus === "PENDING" && <Loading className="w-4 h-4 mr-2" />}
               {statusText[swapStatus]}
             </CardTitle>
-            <CardDescription className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
+            <CardDescription className="text-muted-foreground text-sm">
               {swap.autoSwap && (
-                <span>Auto swap{swap.usedXpub && <> to xpub</>} • </span>
+                <p className="text-center mb-1">
+                  Auto swap{swap.usedXpub && <> to xpub</>}
+                </p>
               )}
-              Swap ID: {swap.id}{" "}
-              <CopyIcon
-                className="cursor-pointer text-muted-foreground size-4"
-                onClick={() => {
-                  copyToClipboard(swap.id);
-                }}
-              />
+              <div className="flex items-center justify-center gap-2">
+                Swap ID: {swap.id}{" "}
+                <CopyIcon
+                  className="cursor-pointer text-muted-foreground size-4"
+                  onClick={() => {
+                    copyToClipboard(swap.id);
+                  }}
+                />
+              </div>
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
@@ -74,10 +79,9 @@ export default function SwapOutStatus() {
                 <CircleCheckIcon className="w-60 h-60" />
                 <div className="flex flex-col gap-2 items-center">
                   <p className="text-xl font-bold slashed-zero text-center">
-                    {new Intl.NumberFormat().format(
-                      swap.receiveAmount as number
-                    )}{" "}
-                    sats
+                    <FormattedBitcoinAmount
+                      amount={(swap.receiveAmount as number) * 1000}
+                    />
                   </p>
                   <FormattedFiatAmount amount={swap.receiveAmount as number} />
                 </div>
@@ -97,7 +101,7 @@ export default function SwapOutStatus() {
                 )}
                 <div className="flex flex-col gap-2 items-center">
                   <p className="text-xl font-bold slashed-zero text-center">
-                    {new Intl.NumberFormat().format(swap.sendAmount)} sats
+                    <FormattedBitcoinAmount amount={swap.sendAmount * 1000} />
                   </p>
                   <div className="flex items-center">
                     <span className="text-sm text-muted-foreground">~</span>
@@ -129,10 +133,9 @@ export default function SwapOutStatus() {
                         <Loading className="w-5 h-5 mr-2" />
                         <div className="flex items-center gap-2">
                           <p>
-                            Waiting for{" "}
                             {swap.claimTxId
-                              ? "1 on-chain confirmation"
-                              : "2 on-chain confirmations"}
+                              ? "Waiting for on-chain confirmation"
+                              : "Broadcasting claim transaction"}
                             ...
                           </p>
                           <ExternalLink

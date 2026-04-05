@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"sort"
 	"strconv"
 	"time"
 
@@ -120,7 +119,8 @@ func (cs *CashuService) MakeInvoice(ctx context.Context, amount int64, descripti
 	return cs.cashuMintQuoteToTransaction(mintQuote), nil
 }
 
-func (cs *CashuService) MakeHoldInvoice(ctx context.Context, amount int64, description string, descriptionHash string, expiry int64, paymentHash string) (transaction *lnclient.Transaction, err error) {
+func (cs *CashuService) MakeHoldInvoice(ctx context.Context, amount int64, description string, descriptionHash string, expiry int64, paymentHash string, minCltvExpiryDelta *uint64) (transaction *lnclient.Transaction, err error) {
+	_ = minCltvExpiryDelta
 	return nil, errors.New("not implemented")
 }
 
@@ -149,40 +149,6 @@ func (cs *CashuService) LookupInvoice(ctx context.Context, paymentHash string) (
 
 	logger.Logger.WithField("paymentHash", paymentHash).Error("Failed to lookup payment request by payment hash")
 	return nil, errors.New("failed to lookup payment request by payment hash")
-}
-
-func (cs *CashuService) ListTransactions(ctx context.Context, from, until, limit, offset uint64, unpaid bool, invoiceType string) (transactions []lnclient.Transaction, err error) {
-	mintQuotes := cs.wallet.GetMintQuotes()
-	meltQuotes := cs.wallet.GetMeltQuotes()
-	transactions = make([]lnclient.Transaction, 0, len(mintQuotes)+len(meltQuotes))
-
-	for _, mintQuote := range mintQuotes {
-		invoiceCreated := time.UnixMilli(mintQuote.CreatedAt * 1000)
-		if time.Since(invoiceCreated) < 24*time.Hour && mintQuote.State != nut04.Paid {
-			cs.checkIncomingPayment(&mintQuote)
-		}
-
-		transaction := cs.cashuMintQuoteToTransaction(&mintQuote)
-		if transaction.SettledAt == nil {
-			continue
-		}
-		transactions = append(transactions, *transaction)
-	}
-
-	for _, meltQuote := range meltQuotes {
-		transaction := cs.cashuMeltQuoteToTransaction(&meltQuote)
-		if transaction.SettledAt == nil {
-			continue
-		}
-		transactions = append(transactions, *transaction)
-	}
-
-	// sort by created date descending
-	sort.SliceStable(transactions, func(i, j int) bool {
-		return transactions[i].CreatedAt > transactions[j].CreatedAt
-	})
-
-	return transactions, nil
 }
 
 func (cs *CashuService) GetInfo(ctx context.Context) (info *lnclient.NodeInfo, err error) {

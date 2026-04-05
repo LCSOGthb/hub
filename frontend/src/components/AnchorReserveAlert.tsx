@@ -1,4 +1,5 @@
 import { AlertTriangleIcon } from "lucide-react";
+import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import { Alert, AlertDescription, AlertTitle } from "src/components/ui/alert";
 import { useBalances } from "src/hooks/useBalances";
 import { useChannels } from "src/hooks/useChannels";
@@ -6,10 +7,8 @@ import { useChannels } from "src/hooks/useChannels";
 export function AnchorReserveAlert({
   amount,
   className,
-  isSwap,
 }: {
   amount: number;
-  isSwap?: boolean;
   className?: string;
 }) {
   const { data: balances } = useBalances();
@@ -37,8 +36,8 @@ export function AnchorReserveAlert({
         including your anchor reserves may put your node at risk of unable to
         reclaim funds in your channel after a force-closure. To prevent this,
         set aside at least{" "}
-        {new Intl.NumberFormat().format(channels.length * 25000)} sats on-chain
-        {isSwap ? ", or pay with an external on-chain wallet." : "."}
+        <FormattedBitcoinAmount amount={channels.length * 25000 * 1000} />{" "}
+        on-chain.
       </AlertDescription>
     </Alert>
   );
