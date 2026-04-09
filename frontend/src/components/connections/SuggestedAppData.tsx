@@ -21,6 +21,7 @@ import goose from "src/assets/suggested-apps/goose.png";
 import hablanews from "src/assets/suggested-apps/habla-news.png";
 import iris from "src/assets/suggested-apps/iris.png";
 import jumble from "src/assets/suggested-apps/jumble.png";
+import lendaswap from "src/assets/suggested-apps/lendaswap.png";
 import lightningMessageboard from "src/assets/suggested-apps/lightning-messageboard.png";
 import lnbits from "src/assets/suggested-apps/lnbits.png";
 import lnvps from "src/assets/suggested-apps/lnvps.png";
@@ -2412,6 +2413,61 @@ export const appStoreApps: AppStoreApp[] = (
         </>
       ),
       categories: ["misc"],
+    },
+    {
+      id: "lendaswap",
+      title: "LendaSwap",
+      description: "Self-custodial Bitcoin ↔ Stablecoin atomic swaps",
+      webLink: "https://lendaswap.com/?ref=lnds_e3f8dd88_f7db93dbf176",
+      logo: lendaswap,
+      extendedDescription:
+        "Swap between Lightning Bitcoin and stablecoins (USDC, USDT) on Polygon, Arbitrum, and Ethereum. LendaSwap uses your Hub to pay swap invoices and generate receiving invoices — all self-custodial via HTLCs.",
+      installGuide: (
+        <>
+          <p className="text-muted-foreground">
+            Open{" "}
+            <ExternalLink
+              to="https://lendaswap.com/?ref=lnds_e3f8dd88_f7db93dbf176"
+              className="font-medium text-foreground underline"
+            >
+              LendaSwap
+            </ExternalLink>{" "}
+            in your browser
+          </p>
+        </>
+      ),
+      finalizeGuide: (
+        <>
+          <div>
+            <h3 className="font-medium">In LendaSwap</h3>
+            <ul className="list-inside list-decimal text-muted-foreground">
+              <li>
+                Click the{" "}
+                <span className="font-medium text-foreground">
+                  ⚡ Lightning
+                </span>{" "}
+                button in the header
+              </li>
+              <li>Paste the connection secret from Alby Hub</li>
+              <li>
+                When swapping Lightning → stablecoins, click{" "}
+                <span className="font-medium text-foreground">
+                  Pay with Lightning Wallet
+                </span>{" "}
+                to pay directly from your Hub
+              </li>
+              <li>
+                When swapping stablecoins → Lightning, click{" "}
+                <span className="font-medium text-foreground">
+                  Generate invoice from wallet
+                </span>{" "}
+                to receive directly into your Hub
+              </li>
+            </ul>
+          </div>
+        </>
+      ),
+      categories: ["payment-tools"],
     },
   ] satisfies AppStoreApp[]
 ).sort((a, b) => (a.title.toUpperCase() > b.title.toUpperCase() ? 1 : -1));
