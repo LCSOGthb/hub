@@ -1,10 +1,9 @@
 import { ExternalLinkIcon } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import AppHeader from "src/components/AppHeader";
 import ExternalLink from "src/components/ExternalLink";
 import { AlbyHead } from "src/components/images/AlbyHead";
 import Loading from "src/components/Loading";
-import { Badge } from "src/components/ui/badge";
 import { Button } from "src/components/ui/button";
 import {
   Card,
@@ -20,12 +19,12 @@ import OnboardingChecklist from "src/screens/wallet/OnboardingChecklist";
 
 import React from "react";
 import albyGo from "src/assets/suggested-apps/alby-go.png";
-import zapplanner from "src/assets/suggested-apps/zapplanner.png";
 import { AppOfTheDayWidget } from "src/components/home/widgets/AppOfTheDayWidget";
 import { BlockHeightWidget } from "src/components/home/widgets/BlockHeightWidget";
 import { ForwardsWidget } from "src/components/home/widgets/ForwardsWidget";
 import { LatestUsedAppsWidget } from "src/components/home/widgets/LatestUsedAppsWidget";
 import { LightningMessageboardWidget } from "src/components/home/widgets/LightningMessageboardWidget";
+import { NewArrivalsWidget } from "src/components/home/widgets/NewArrivalsWidget";
 import { NodeStatusWidget } from "src/components/home/widgets/NodeStatusWidget";
 import { OnchainFeesWidget } from "src/components/home/widgets/OnchainFeesWidget";
 import { SupportAlbyWidget } from "src/components/home/widgets/SupportAlbyWidget";
@@ -71,6 +70,10 @@ function Home() {
         <div className="grid gap-3">
           <OnboardingChecklist />
           <WhatsNewWidget />
+          <SupportAlbyWidget />
+          <LatestUsedAppsWidget />
+          <NewArrivalsWidget />
+          <AppOfTheDayWidget />
           {info.albyAccountConnected && (
             <ExternalLink to="https://www.getalby.com/dashboard">
               <Card>
@@ -161,38 +164,7 @@ function Home() {
 
         {/* RIGHT */}
         <div className="grid gap-3">
-          <LatestUsedAppsWidget />
-          <SupportAlbyWidget />
           <LightningMessageboardWidget />
-          <AppOfTheDayWidget />
-
-          <Link to="/internal-apps/zapplanner">
-            <Card>
-              <CardHeader>
-                <div className="flex flex-row items-center">
-                  <div className="shrink-0">
-                    <img
-                      src={zapplanner}
-                      className="w-12 h-12 rounded-xl border"
-                    />
-                  </div>
-                  <div>
-                    <CardTitle>
-                      <div className="flex-1 leading-5 font-semibold text-xl whitespace-nowrap text-ellipsis overflow-hidden ml-4 flex gap-2">
-                        ZapPlanner <Badge>NEW</Badge>
-                      </div>
-                    </CardTitle>
-                    <CardDescription className="ml-4">
-                      Schedule automatic recurring lightning payments.
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="text-right">
-                <Button variant="outline">Open</Button>
-              </CardContent>
-            </Card>
-          </Link>
 
           <Card>
             <CardHeader>

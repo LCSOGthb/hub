@@ -1,6 +1,6 @@
 import { InfoIcon } from "lucide-react";
 import React, { FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import AppHeader from "src/components/AppHeader";
 import { ChannelPeerNote } from "src/components/channels/ChannelPeerNote";
@@ -106,7 +106,9 @@ function NewChannelInternal({
       network,
       paymentMethod: "onchain",
       minimumChannelSize: 0,
+      minimumChannelSizeSat: 0,
       maximumChannelSize: 0,
+      maximumChannelSizeSat: 0,
       description: "",
       pubkey: "",
       host: "",
