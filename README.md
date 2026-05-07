@@ -1,4 +1,4 @@
-## This version of Alby Hub has been modified to use Render Free plan, this has downside of the storage being temporary which mean your data will be gone everytime you update your Render hosting or redeploy/restart.
+## This version of Alby Hub has been modified to use Render Free plan, this has downside of the storage being temporary which mean your data will be gone/reset everytime you update your Render hosting or redeploy/restart.
 <img alt="Alby Hub Logo" src="./doc/logo.svg" width="400">
 
 <br/>
