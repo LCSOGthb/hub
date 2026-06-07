@@ -66,7 +66,7 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
 		ContentTypeNosniff:    "nosniff",
 		XFrameOptions:         "DENY",
-		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https://uploads.getalby-assets.com https://getalby.com; connect-src 'self' https://api.getalby.com https://getalby.com https://zapplanner.albylabs.com wss://relay.getalby.com wss://relay2.getalby.com; frame-src https://embed.bitrefill.com",
+		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https://uploads.getalby-assets.com https://cdn.getalby-assets.com https://getalby.com; connect-src 'self' https://api.getalby.com https://getalby.com https://zapplanner.albylabs.com wss://relay.getalby.com wss://relay2.getalby.com; frame-src https://embed.bitrefill.com https://www.youtube-nocookie.com",
 		ReferrerPolicy:        "no-referrer",
 	}))
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -157,7 +157,7 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	fullAccessApiGroup.Use(echojwt.WithConfig(jwtConfig))
 	fullAccessApiGroup.Use(httpSvc.requireFullAccess)
 
-	fullAccessApiGroup.POST("/api/event", httpSvc.eventHandler)
+	fullAccessApiGroup.POST("/event", httpSvc.eventHandler)
 	fullAccessApiGroup.PATCH("/unlock-password", httpSvc.changeUnlockPasswordHandler)
 	fullAccessApiGroup.PATCH("/auto-unlock", httpSvc.autoUnlockHandler)
 	fullAccessApiGroup.PATCH("/settings", httpSvc.updateSettingsHandler)

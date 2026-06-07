@@ -408,7 +408,7 @@ func (svc *albyOAuthService) DeleteLightningAddress(ctx context.Context, address
 
 	res, err := client.Do(req)
 	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to delete lightning address endpoint")
+		logger.Logger.WithError(err).Error("Failed to request delete lightning address endpoint")
 		return err
 	}
 
@@ -1369,6 +1369,52 @@ func (svc *albyOAuthService) requestAutoChannel(ctx context.Context, url string,
 	}, nil
 }
 
+func (svc *albyOAuthService) GetStories(ctx context.Context) ([]Story, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	url := fmt.Sprintf("%s/stories", albyInternalAPIURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Error creating request to stories endpoint")
+		return nil, fmt.Errorf("create stories request: %w", err)
+	}
+	setDefaultRequestHeaders(req)
+
+	res, err := client.Do(req)
+	if err != nil {
+		logger.Logger.WithError(err).Error("Failed to fetch stories from API")
+		return nil, fmt.Errorf("fetch stories: %w", err)
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		logger.Logger.WithError(err).WithFields(logrus.Fields{
+			"url": url,
+		}).Error("Failed to read response body")
+		return nil, fmt.Errorf("read stories response body: %w", err)
+	}
+
+	if res.StatusCode >= 300 {
+		logger.Logger.WithFields(logrus.Fields{
+			"body":        string(body),
+			"status_code": res.StatusCode,
+		}).Error("stories endpoint returned non-success code")
+		return nil, fmt.Errorf("stories endpoint returned %d: %s", res.StatusCode, string(body))
+	}
+
+	var stories []Story
+	if err := json.Unmarshal(body, &stories); err != nil {
+		logger.Logger.WithFields(logrus.Fields{
+			"body":  string(body),
+			"error": err,
+		}).Error("Failed to decode stories API response")
+		return nil, fmt.Errorf("decode stories response: %w", err)
+	}
+
+	return stories, nil
+}
+
 func setDefaultRequestHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "AlbyHub/"+version.Tag)
@@ -1413,5 +1459,7 @@ func getEventWhitelist() []string {
 
 		// client-side events
 		"payment_failed_details",
+		"debit_card_url_clicked",
+		"debit_card_connect",
 	}
 }

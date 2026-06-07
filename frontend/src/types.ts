@@ -11,7 +11,7 @@ import {
   WalletMinimalIcon,
 } from "lucide-react";
 
-export type BackendType = "LND" | "LDK" | "PHOENIX" | "CASHU" | "CLN";
+export type BackendType = "LND" | "LDK" | "PHOENIX" | "CASHU" | "CLN" | "BARK";
 
 export type Nip47RequestMethod =
   | "get_info"
@@ -169,6 +169,7 @@ export interface InfoResponse {
   chainDataSourceType?: string;
   chainDataSourceAddress?: string;
   hideUpdateBanner: boolean;
+  supportsBolt12: boolean;
 }
 
 export type BitcoinDisplayFormat = "sats" | "bip177";

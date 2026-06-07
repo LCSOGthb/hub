@@ -29,9 +29,11 @@ import codexLogo from "src/assets/suggested-apps/codex.png";
 import cursorLogo from "src/assets/suggested-apps/cursor.png";
 import geminiLogo from "src/assets/suggested-apps/gemini.png";
 import gooseLogo from "src/assets/suggested-apps/goose.png";
+import hermesLogo from "src/assets/suggested-apps/hermes.png";
 import openclawLogo from "src/assets/suggested-apps/openclaw.png";
 import opencodeLogo from "src/assets/suggested-apps/opencode.png";
 import payperqLogo from "src/assets/suggested-apps/payperq.png";
+import piLogo from "src/assets/suggested-apps/pi.png";
 import AppHeader from "src/components/AppHeader";
 import ExternalLink from "src/components/ExternalLink";
 import Loading from "src/components/Loading";
@@ -80,6 +82,13 @@ const agents: Agent[] = [
     name: "OpenClaw",
     logo: openclawLogo,
     description: "Open-source personal AI assistant",
+    setupUrl: "",
+  },
+  {
+    id: "hermes",
+    name: "Hermes",
+    logo: hermesLogo,
+    description: "Self-improving open-source AI agent by Nous Research",
     setupUrl: "",
   },
   {
@@ -148,6 +157,13 @@ const agents: Agent[] = [
     name: "OpenCode",
     logo: opencodeLogo,
     description: "Terminal-based AI coding assistant",
+    setupUrl: "",
+  },
+  {
+    id: "pi",
+    name: "Pi",
+    logo: piLogo,
+    description: "Minimal terminal coding agent, great for local LLMs",
     setupUrl: "",
   },
 ];
@@ -654,7 +670,7 @@ const whyLightningItems = [
     icon: EyeOffIcon,
     title: "Private by Default",
     description:
-      "No credit cards or personal info shared with merchants. Your agent pays over Lightning — fast, direct, and private.",
+      "No credit cards or personal info shared with merchants. Your agent pays over lightning — fast, direct, and private.",
   },
   {
     icon: ZapIcon,
