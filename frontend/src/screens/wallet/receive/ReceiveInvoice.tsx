@@ -1,4 +1,5 @@
 import {
+  AlertTriangleIcon,
   ArrowLeftIcon,
   CopyIcon,
   LinkIcon,
@@ -7,14 +8,23 @@ import {
 } from "lucide-react";
 import TickSVG from "public/images/illustrations/tick.svg";
 import React from "react";
+import { Link } from "react-router";
 import { toast } from "sonner";
 import AppHeader from "src/components/AppHeader";
 import { CurrencyInputField } from "src/components/CurrencyInputField";
+import ExternalLink from "src/components/ExternalLink";
 import { FormattedBitcoinAmount } from "src/components/FormattedBitcoinAmount";
 import FormattedFiatAmount from "src/components/FormattedFiatAmount";
 import Loading from "src/components/Loading";
 import LowReceivingCapacityAlert from "src/components/LowReceivingCapacityAlert";
 import QRCode from "src/components/QRCode";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "src/components/ui/accordion";
+import { Alert, AlertDescription } from "src/components/ui/alert";
 import { Button } from "src/components/ui/button";
 import {
   Card,
@@ -30,6 +40,7 @@ import { Input } from "src/components/ui/input";
 import { Label } from "src/components/ui/label";
 import { useAlbyMe } from "src/hooks/useAlbyMe";
 import { useBalances } from "src/hooks/useBalances";
+import { useChannels } from "src/hooks/useChannels";
 
 import { useInfo } from "src/hooks/useInfo";
 import { useTransaction } from "src/hooks/useTransaction";
@@ -42,24 +53,59 @@ export default function ReceiveInvoice() {
   const { data: info, hasChannelManagement } = useInfo();
   const { data: me } = useAlbyMe();
   const { data: balances } = useBalances();
+  const { data: channels } = useChannels();
 
   const [isLoading, setLoading] = React.useState(false);
+  const [jitChannelRequestFailed, setJitChannelRequestFailed] =
+    React.useState(false);
   const [amountSat, setAmountSat] = React.useState<string>("");
   const [description, setDescription] = React.useState<string>("");
   const [transaction, setTransaction] = React.useState<Transaction | null>(
     null
   );
-  const [paymentDone, setPaymentDone] = React.useState(false);
   const { data: invoiceData } = useTransaction(
     transaction ? transaction.paymentHash : "",
     true
   );
-
-  React.useEffect(() => {
-    if (invoiceData?.settledAt) {
-      setPaymentDone(true);
+  const paymentDone = !!invoiceData?.settledAt;
+  const jitChannelsEnabled = !!info?.jitChannelsEnabled;
+  const configuredLsps2Source = info?.jitChannelsLiquiditySource;
+  const lsps2Source = jitChannelsEnabled ? configuredLsps2Source : undefined;
+  const lsps2MinimumPaymentSizeSat = React.useMemo(() => {
+    if (jitChannelsEnabled && info?.jitChannelsMinPaymentSizeMsat) {
+      return Math.ceil(info.jitChannelsMinPaymentSizeMsat / 1000);
     }
-  }, [invoiceData]);
+    return undefined;
+  }, [info?.jitChannelsMinPaymentSizeMsat, jitChannelsEnabled]);
+  // only enforce the minimum on the input when the user has no channels yet -
+  // their first channel must meet the minimum size.
+  const jitMinimumReceiveSat = channels?.length
+    ? undefined
+    : lsps2MinimumPaymentSizeSat;
+  const lsps2MaximumPaymentSizeSat = React.useMemo(() => {
+    if (jitChannelsEnabled && info?.jitChannelsMaxPaymentSizeMsat) {
+      return Math.floor(info.jitChannelsMaxPaymentSizeMsat / 1000);
+    }
+    return undefined;
+  }, [info?.jitChannelsMaxPaymentSizeMsat, jitChannelsEnabled]);
+  const jitMaximumReceiveSat =
+    hasChannelManagement && lsps2Source
+      ? lsps2MaximumPaymentSizeSat
+      : !lsps2Source && hasChannelManagement
+        ? balances?.lightning.totalReceivableSat
+        : undefined;
+  const totalReceivableMsat = balances?.lightning.totalReceivableMsat ?? 0;
+  const requestedAmountMsat = +amountSat * 1000 || transaction?.amountMsat || 0;
+  const isNearReceivingCapacity =
+    !!hasChannelManagement && requestedAmountMsat >= 0.8 * totalReceivableMsat;
+  const isJitReceiveInvoice =
+    !!hasChannelManagement &&
+    !!lsps2Source &&
+    !!transaction &&
+    transaction.amountMsat > totalReceivableMsat;
+  const displayedJitFeeMsat = paymentDone
+    ? (invoiceData?.feesPaidMsat ?? 0)
+    : (transaction?.feesPaidMsat ?? 0);
 
   if (!balances || !info || (info.albyAccountConnected && !me)) {
     return <Loading />;
@@ -70,6 +116,7 @@ export default function ReceiveInvoice() {
 
     try {
       setLoading(true);
+      setJitChannelRequestFailed(false);
       const invoice = await request<Transaction>("/api/invoices", {
         method: "POST",
         headers: {
@@ -88,9 +135,29 @@ export default function ReceiveInvoice() {
         toast("Successfully created invoice");
       }
     } catch (e) {
+      const requestedAmountSat = parseInt(amountSat) || 0;
+      // the user already has channels but this amount exceeds their receiving
+      // capacity (so a new channel is needed) and is below the LSP's minimum
+      // channel size - the receive may have failed because the amount was too
+      // small to open a second channel, so add a hint alongside the error.
+      const likelyTooSmallForNewChannel =
+        jitChannelsEnabled &&
+        !!channels?.length &&
+        !!lsps2MinimumPaymentSizeSat &&
+        requestedAmountSat < lsps2MinimumPaymentSizeSat &&
+        requestedAmountSat * 1000 > totalReceivableMsat;
+      let description = "" + e;
+      if (likelyTooSmallForNewChannel) {
+        description += `\n\nThis amount is over your receiving capacity and may be too small to open a new Lightning channel. Try receiving at least ${new Intl.NumberFormat().format(
+          lsps2MinimumPaymentSizeSat as number
+        )} sats, or lower the amount to fit your current capacity.`;
+      }
       toast.error("Failed to create invoice", {
-        description: "" + e,
+        description,
       });
+      if (lsps2Source) {
+        setJitChannelRequestFailed(true);
+      }
       console.error(e);
     } finally {
       setLoading(false);
@@ -101,6 +168,19 @@ export default function ReceiveInvoice() {
     copyToClipboard(transaction?.invoice as string);
   };
 
+  const newChannelFeeAlert = (
+    <p className="text-sm text-muted-foreground text-center">
+      Includes a <FormattedBitcoinAmount amountMsat={displayedJitFeeMsat} />{" "}
+      channel fee.{" "}
+      <ExternalLink
+        to="https://guides.getalby.com/user-guide/alby-hub/faq/what-are-just-in-time-channels"
+        className="underline"
+      >
+        Learn more
+      </ExternalLink>
+    </p>
+  );
+
   return (
     <div className="grid gap-5">
       <AppHeader
@@ -109,11 +189,9 @@ export default function ReceiveInvoice() {
       />
       <div className="flex flex-col md:flex-row gap-12">
         <div className="w-full md:max-w-lg grid gap-6">
-          {hasChannelManagement &&
-            (+amountSat * 1000 || transaction?.amountMsat || 0) >=
-              0.8 * balances.lightning.totalReceivableMsat && (
-              <LowReceivingCapacityAlert />
-            )}
+          {!lsps2Source && !transaction && isNearReceivingCapacity && (
+            <LowReceivingCapacityAlert />
+          )}
           <div>
             {transaction ? (
               <Card>
@@ -138,6 +216,9 @@ export default function ReceiveInvoice() {
                           className="text-xl"
                         />
                       </div>
+                      {isJitReceiveInvoice && displayedJitFeeMsat >= 1000 && (
+                        <div className="w-full">{newChannelFeeAlert}</div>
+                      )}
                     </CardContent>
                     <CardFooter className="flex flex-col gap-2">
                       <Button
@@ -174,7 +255,6 @@ export default function ReceiveInvoice() {
                     <CardFooter className="flex flex-col gap-2 pt-2">
                       <Button
                         onClick={() => {
-                          setPaymentDone(false);
                           setTransaction(null);
                         }}
                         variant="outline"
@@ -201,19 +281,42 @@ export default function ReceiveInvoice() {
                   id="amount"
                   valueSat={amountSat}
                   onValueSatChange={setAmountSat}
-                  minSat={1}
-                  maxSat={
-                    hasChannelManagement
-                      ? balances.lightning.totalReceivableSat
-                      : undefined
-                  }
+                  minSat={jitMinimumReceiveSat ?? 1}
+                  onInvalid={(e) => {
+                    if (
+                      jitMinimumReceiveSat &&
+                      e.currentTarget.validity.rangeUnderflow
+                    ) {
+                      e.currentTarget.setCustomValidity(
+                        `You need to receive at least ${new Intl.NumberFormat().format(
+                          jitMinimumReceiveSat
+                        )} sats to open your first lightning channel`
+                      );
+                    } else if (
+                      jitMaximumReceiveSat &&
+                      e.currentTarget.validity.rangeOverflow
+                    ) {
+                      e.currentTarget.setCustomValidity(
+                        lsps2Source
+                          ? `This JIT channel setup supports receiving at most ${new Intl.NumberFormat().format(
+                              jitMaximumReceiveSat
+                            )} sats in a single payment`
+                          : `You can receive at most ${new Intl.NumberFormat().format(
+                              jitMaximumReceiveSat
+                            )} sats with your current capacity`
+                      );
+                    } else {
+                      e.currentTarget.setCustomValidity("");
+                    }
+                  }}
+                  maxSat={jitMaximumReceiveSat}
                   autoFocus
                   contextRows={
-                    hasChannelManagement
+                    hasChannelManagement && !lsps2Source && jitMaximumReceiveSat
                       ? [
                           {
                             label: "Receive limit",
-                            amountSat: balances.lightning.totalReceivableSat,
+                            amountSat: jitMaximumReceiveSat,
                           },
                         ]
                       : undefined
@@ -245,30 +348,48 @@ export default function ReceiveInvoice() {
                   Create Invoice
                 </LoadingButton>
                 {(!info?.albyAccountConnected || !me?.lightning_address) && (
-                  <div className="grid gap-2 border-t pt-6">
-                    {!info?.albyAccountConnected && info.supportsBolt12 && (
-                      <LinkButton
-                        to="/wallet/receive/offer"
-                        variant="outline"
-                        className="w-full"
-                      >
-                        <ReceiptTextIcon className="h-4 w-4" />
-                        Lightning Offer
-                      </LinkButton>
-                    )}
-                    <LinkButton
-                      to="/wallet/receive/onchain"
-                      variant="outline"
-                      className="w-full"
-                    >
-                      <LinkIcon className="h-4 w-4" />
-                      Receive from On-chain / Other Cryptocurrency
-                    </LinkButton>
-                  </div>
+                  <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value="more-options">
+                      <AccordionTrigger>
+                        View other ways to receive
+                      </AccordionTrigger>
+                      <AccordionContent className="flex flex-col gap-2">
+                        {!info?.albyAccountConnected && info.supportsBolt12 && (
+                          <LinkButton
+                            to="/wallet/receive/offer"
+                            variant="outline"
+                            className="w-full"
+                          >
+                            <ReceiptTextIcon className="h-4 w-4" />
+                            Lightning Offer
+                          </LinkButton>
+                        )}
+                        <LinkButton
+                          to="/wallet/receive/onchain"
+                          variant="outline"
+                          className="w-full"
+                        >
+                          <LinkIcon className="h-4 w-4" />
+                          Receive from On-chain / Other Cryptocurrency
+                        </LinkButton>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 )}
               </form>
             )}
           </div>
+          {!transaction && jitChannelRequestFailed && (
+            <Alert variant="warning">
+              <AlertTriangleIcon className="h-4 w-4" />
+              <AlertDescription className="inline">
+                Failed to request a just-in-time channel invoice.{" "}
+                <Link className="underline" to="/channels/incoming">
+                  Manually open a channel.
+                </Link>
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
         {!transaction &&
           (!info?.albyAccountConnected || !me?.lightning_address) && (
