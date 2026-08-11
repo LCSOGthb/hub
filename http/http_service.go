@@ -66,6 +66,7 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
 		ContentTypeNosniff:    "nosniff",
 		XFrameOptions:         "DENY",
+		// when making changes here, also update the CSP in frontend/vite.config.ts
 		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https://uploads.getalby-assets.com https://cdn.getalby-assets.com https://getalby.com; connect-src 'self' https://api.getalby.com https://getalby.com https://zapplanner.albylabs.com wss://relay.getalby.com wss://relay2.getalby.com; frame-src https://www.youtube-nocookie.com",
 		ReferrerPolicy:        "no-referrer",
 	}))
@@ -148,7 +149,6 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	readOnlyApiGroup.GET("/swaps/:swapId", httpSvc.lookupSwapHandler)
 	readOnlyApiGroup.GET("/swaps/out/info", httpSvc.getSwapOutInfoHandler)
 	readOnlyApiGroup.GET("/swaps/in/info", httpSvc.getSwapInInfoHandler)
-	readOnlyApiGroup.GET("/swaps/mnemonic", httpSvc.swapMnemonicHandler)
 	readOnlyApiGroup.GET("/autoswap", httpSvc.getAutoSwapConfigHandler)
 	readOnlyApiGroup.GET("/forwards", httpSvc.forwardsHandler)
 
@@ -191,6 +191,7 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	fullAccessApiGroup.POST("/swaps/out", httpSvc.initiateSwapOutHandler)
 	fullAccessApiGroup.POST("/swaps/in", httpSvc.initiateSwapInHandler)
 	fullAccessApiGroup.POST("/swaps/refund", httpSvc.refundSwapHandler)
+	fullAccessApiGroup.GET("/swaps/mnemonic", httpSvc.swapMnemonicHandler)
 	fullAccessApiGroup.POST("/autoswap", httpSvc.enableAutoSwapOutHandler)
 	fullAccessApiGroup.DELETE("/autoswap", httpSvc.disableAutoSwapOutHandler)
 	fullAccessApiGroup.POST("/node/alias", httpSvc.setNodeAliasHandler)
@@ -687,7 +688,7 @@ func (httpSvc *HttpService) makeInvoiceHandler(c echo.Context) error {
 		amountMsat = *resolvedAmountMsat
 	}
 
-	invoice, err := httpSvc.api.CreateInvoice(c.Request().Context(), amountMsat, makeInvoiceRequest.Description)
+	invoice, err := httpSvc.api.CreateInvoice(c.Request().Context(), amountMsat, makeInvoiceRequest.Description, makeInvoiceRequest.ToAppID)
 
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{
@@ -765,7 +766,14 @@ func (httpSvc *HttpService) listTransactionsHandler(c echo.Context) error {
 		}
 	}
 
-	transactions, err := httpSvc.api.ListTransactions(ctx, appId, limit, offset)
+	filters, err := api.ParseListTransactionsFilters(c.QueryParams())
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, ErrorResponse{
+			Message: err.Error(),
+		})
+	}
+
+	transactions, err := httpSvc.api.ListTransactions(ctx, appId, limit, offset, filters)
 
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{
@@ -1223,7 +1231,7 @@ func (httpSvc *HttpService) appsCreateHandler(c echo.Context) error {
 	responseBody, err := httpSvc.api.CreateApp(&requestData)
 
 	if err != nil {
-		logger.Logger.WithField("requestData", requestData).WithError(err).Error("Failed to save app")
+		logger.Logger.WithField("appName", requestData.Name).WithError(err).Error("Failed to save app")
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Message: fmt.Sprintf("Failed to save app: %v", err),
 		})
