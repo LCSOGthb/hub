@@ -23,6 +23,7 @@ import (
 	"github.com/getAlby/hub/events"
 	"github.com/getAlby/hub/logger"
 	"github.com/getAlby/hub/service"
+	"github.com/getAlby/hub/swaps"
 
 	"github.com/getAlby/hub/api"
 	"github.com/getAlby/hub/frontend"
@@ -64,8 +65,8 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	e.HideBanner = true
 
 	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
-		ContentTypeNosniff:    "nosniff",
-		XFrameOptions:         "DENY",
+		ContentTypeNosniff: "nosniff",
+		XFrameOptions:      "DENY",
 		// when making changes here, also update the CSP in frontend/vite.config.ts
 		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https://uploads.getalby-assets.com https://cdn.getalby-assets.com https://getalby.com; connect-src 'self' https://api.getalby.com https://getalby.com https://zapplanner.albylabs.com wss://relay.getalby.com wss://relay2.getalby.com; frame-src https://www.youtube-nocookie.com",
 		ReferrerPolicy:        "no-referrer",
@@ -94,15 +95,27 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	e.Use(middleware.RequestID())
 
 	e.GET("/api/info", httpSvc.infoHandler)
-	e.POST("/api/setup", httpSvc.setupHandler)
-	e.POST("/api/restore", httpSvc.restoreBackupHandler)
-
-	// allow one unlock request per second
-	unlockRateLimiter := middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(1))
+	// A single global rate limiter (one bucket for all callers, not per-IP)
+	// shared by every endpoint that verifies the unlock password or setup code,
+	// to bound how fast they can be guessed.
+	unlockRateLimiter := middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+		Store: middleware.NewRateLimiterMemoryStoreWithConfig(
+			// burst of 2 so unlocking and then immediately acting is not blocked
+			middleware.RateLimiterMemoryStoreConfig{Rate: 1, Burst: 2},
+		),
+		IdentifierExtractor: func(c echo.Context) (string, error) {
+			return "", nil
+		},
+	})
 	e.POST("/api/start", httpSvc.startHandler, unlockRateLimiter)
 	e.POST("/api/unlock", httpSvc.unlockHandler, unlockRateLimiter)
 	e.POST("/api/backup", httpSvc.createBackupHandler, unlockRateLimiter)
-	e.GET("/logout", httpSvc.logoutHandler, unlockRateLimiter)
+
+	setupMiddlewares := []echo.MiddlewareFunc{unlockRateLimiter, httpSvc.requireSetupCode}
+	e.POST("/api/setup", httpSvc.setupHandler, setupMiddlewares...)
+	e.POST("/api/setup/verify-code", httpSvc.verifySetupCodeHandler, setupMiddlewares...)
+	e.POST("/api/restore", httpSvc.restoreBackupHandler, setupMiddlewares...)
+	e.GET("/logout", httpSvc.logoutHandler)
 
 	frontend.RegisterHandlers(e)
 
@@ -141,8 +154,8 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	readOnlyApiGroup.GET("/transactions", httpSvc.listTransactionsHandler)
 	readOnlyApiGroup.GET("/transactions/:paymentHash", httpSvc.lookupTransactionHandler)
 	readOnlyApiGroup.GET("/balances", httpSvc.balancesHandler)
+	readOnlyApiGroup.GET("/jit-channels/info", httpSvc.jitChannelsInfoHandler)
 	readOnlyApiGroup.GET("/mempool", httpSvc.mempoolApiHandler)
-	readOnlyApiGroup.GET("/log/:type", httpSvc.getLogOutputHandler)
 	readOnlyApiGroup.GET("/health", httpSvc.healthHandler)
 	readOnlyApiGroup.GET("/commands", httpSvc.getCustomNodeCommandsHandler)
 	readOnlyApiGroup.GET("/swaps", httpSvc.listSwapsHandler)
@@ -158,17 +171,17 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	fullAccessApiGroup.Use(httpSvc.requireFullAccess)
 
 	fullAccessApiGroup.POST("/event", httpSvc.eventHandler)
-	fullAccessApiGroup.PATCH("/unlock-password", httpSvc.changeUnlockPasswordHandler)
-	fullAccessApiGroup.PATCH("/auto-unlock", httpSvc.autoUnlockHandler)
+	fullAccessApiGroup.PATCH("/unlock-password", httpSvc.changeUnlockPasswordHandler, unlockRateLimiter)
+	fullAccessApiGroup.PATCH("/auto-unlock", httpSvc.autoUnlockHandler, unlockRateLimiter)
 	fullAccessApiGroup.PATCH("/settings", httpSvc.updateSettingsHandler)
 	fullAccessApiGroup.PATCH("/apps/:pubkey", httpSvc.appsUpdateHandler)
 	fullAccessApiGroup.PATCH("/transactions/:id/labels", httpSvc.setTransactionUserLabelsHandler)
 	fullAccessApiGroup.DELETE("/apps/:pubkey", httpSvc.appsDeleteHandler)
 	fullAccessApiGroup.POST("/transfers", httpSvc.transfersHandler)
-	fullAccessApiGroup.POST("/apps", httpSvc.appsCreateHandler)
+	fullAccessApiGroup.POST("/apps", httpSvc.appsCreateHandler, unlockRateLimiter)
 	fullAccessApiGroup.POST("/lightning-addresses", httpSvc.lightningAddressesCreateHandler)
 	fullAccessApiGroup.DELETE("/lightning-addresses/:appId", httpSvc.lightningAddressesDeleteHandler)
-	fullAccessApiGroup.POST("/mnemonic", httpSvc.mnemonicHandler)
+	fullAccessApiGroup.POST("/mnemonic", httpSvc.mnemonicHandler, unlockRateLimiter)
 	fullAccessApiGroup.PATCH("/backup-reminder", httpSvc.backupReminderHandler)
 	fullAccessApiGroup.POST("/channels", httpSvc.openChannelHandler)
 	fullAccessApiGroup.POST("/channels/rebalance", httpSvc.rebalanceChannelHandler)
@@ -192,11 +205,12 @@ func (httpSvc *HttpService) RegisterSharedRoutes(e *echo.Echo) {
 	fullAccessApiGroup.POST("/swaps/in", httpSvc.initiateSwapInHandler)
 	fullAccessApiGroup.POST("/swaps/refund", httpSvc.refundSwapHandler)
 	fullAccessApiGroup.GET("/swaps/mnemonic", httpSvc.swapMnemonicHandler)
-	fullAccessApiGroup.POST("/autoswap", httpSvc.enableAutoSwapOutHandler)
+	fullAccessApiGroup.GET("/log/:type", httpSvc.getLogOutputHandler)
+	fullAccessApiGroup.POST("/autoswap", httpSvc.enableAutoSwapOutHandler, unlockRateLimiter)
 	fullAccessApiGroup.DELETE("/autoswap", httpSvc.disableAutoSwapOutHandler)
 	fullAccessApiGroup.POST("/node/alias", httpSvc.setNodeAliasHandler)
 
-	httpSvc.albyHttpSvc.RegisterSharedRoutes(readOnlyApiGroup, fullAccessApiGroup, e)
+	httpSvc.albyHttpSvc.RegisterSharedRoutes(readOnlyApiGroup, fullAccessApiGroup, e, setupMiddlewares)
 }
 
 func (httpSvc *HttpService) infoHandler(c echo.Context) error {
@@ -210,7 +224,7 @@ func (httpSvc *HttpService) infoHandler(c echo.Context) error {
 	authHeader := c.Request().Header.Get("Authorization")
 	if authHeader != "" {
 		parts := strings.Split(authHeader, " ")
-		if parts[0] == "Bearer" {
+		if len(parts) == 2 && parts[0] == "Bearer" {
 			tokenString := parts[1]
 			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 				secret, err := httpSvc.cfg.GetJWTSecret()
@@ -225,6 +239,17 @@ func (httpSvc *HttpService) infoHandler(c echo.Context) error {
 			}
 			responseBody.Unlocked = err == nil && token != nil && token.Valid
 		}
+	}
+
+	return c.JSON(http.StatusOK, responseBody)
+}
+
+func (httpSvc *HttpService) jitChannelsInfoHandler(c echo.Context) error {
+	responseBody, err := httpSvc.api.GetJitChannelsInfo()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Message: err.Error(),
+		})
 	}
 
 	return c.JSON(http.StatusOK, responseBody)
@@ -1456,8 +1481,13 @@ func (httpSvc *HttpService) listSwapsHandler(c echo.Context) error {
 func (httpSvc *HttpService) lookupSwapHandler(c echo.Context) error {
 	swap, err := httpSvc.api.LookupSwap(c.Param("swapId"))
 	if err != nil {
-		return c.JSON(http.StatusNotFound, ErrorResponse{
-			Message: "App not found",
+		if errors.Is(err, swaps.ErrSwapNotFound) {
+			return c.JSON(http.StatusNotFound, ErrorResponse{
+				Message: "Swap not found",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Message: "Failed to lookup swap",
 		})
 	}
 
@@ -1487,7 +1517,7 @@ func (httpSvc *HttpService) getSwapInInfoHandler(c echo.Context) error {
 }
 
 func (httpSvc *HttpService) initiateSwapOutHandler(c echo.Context) error {
-	var initiateSwapOutRequest api.InitiateSwapRequest
+	var initiateSwapOutRequest api.InitiateSwapOutRequest
 	if err := c.Bind(&initiateSwapOutRequest); err != nil {
 		return c.JSON(http.StatusBadRequest, ErrorResponse{
 			Message: fmt.Sprintf("Bad request: %s", err.Error()),
@@ -1505,7 +1535,7 @@ func (httpSvc *HttpService) initiateSwapOutHandler(c echo.Context) error {
 }
 
 func (httpSvc *HttpService) initiateSwapInHandler(c echo.Context) error {
-	var initiateSwapInRequest api.InitiateSwapRequest
+	var initiateSwapInRequest api.InitiateSwapInRequest
 	if err := c.Bind(&initiateSwapInRequest); err != nil {
 		return c.JSON(http.StatusBadRequest, ErrorResponse{
 			Message: fmt.Sprintf("Bad request: %s", err.Error()),

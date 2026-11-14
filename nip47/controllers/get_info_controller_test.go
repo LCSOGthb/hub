@@ -79,6 +79,7 @@ func TestHandleGetInfoEvent_NoPermission(t *testing.T) {
 	// get_info method is always granted, but does not return pubkey
 	assert.Contains(t, infoResponse.Methods, models.GET_INFO_METHOD)
 	assert.Equal(t, []string{}, infoResponse.Notifications)
+	assert.Equal(t, []string{models.METADATA_EXTENSION}, infoResponse.Extensions)
 	require.NotNil(t, infoResponse.Metadata)
 	assert.Equal(t, float64(123), infoResponse.Metadata.(map[string]interface{})["a"])
 	assert.Equal(t, app.ID, infoResponse.Metadata.(map[string]interface{})["id"])
@@ -360,4 +361,45 @@ func TestHandleGetInfoEvent_WithNotifications(t *testing.T) {
 	assert.Equal(t, tests.MockNodeInfo.BlockHash, *infoResponse.BlockHash)
 	assert.Contains(t, infoResponse.Methods, "get_info")
 	assert.Equal(t, []string{"payment_received", "payment_sent"}, infoResponse.Notifications)
+	assert.Equal(t, []string{models.NOTIFICATIONS_EXTENSION, models.METADATA_EXTENSION}, infoResponse.Extensions)
+}
+
+func TestHandleGetInfoEvent_SubwalletNonStringLightningAddress(t *testing.T) {
+	ctx := context.TODO()
+	svc, err := tests.CreateTestService(t)
+	require.NoError(t, err)
+	defer svc.Remove()
+
+	metadata := map[string]interface{}{
+		constants.METADATA_APPSTORE_APP_ID_KEY: constants.SUBWALLET_APPSTORE_APP_ID,
+		"lud16":                                map[string]interface{}{"a": 1},
+	}
+
+	svc.Cfg.SetUpdate("LNBackendType", config.LDKBackendType, "")
+	app, _, err := svc.AppsService.CreateApp("test", "", 0, "monthly", nil, []string{constants.GET_INFO_SCOPE}, true, metadata)
+	require.NoError(t, err)
+
+	nip47Request := &models.Request{}
+	err = json.Unmarshal([]byte(nip47GetInfoJson), nip47Request)
+	require.NoError(t, err)
+
+	dbRequestEvent := &db.RequestEvent{}
+	err = svc.DB.Create(&dbRequestEvent).Error
+	require.NoError(t, err)
+
+	err = svc.DB.Create(&db.AppPermission{AppId: app.ID, Scope: constants.GET_INFO_SCOPE}).Error
+	require.NoError(t, err)
+
+	var publishedResponse *models.Response
+	publishResponse := func(response *models.Response, tags nostr.Tags) {
+		publishedResponse = response
+	}
+
+	NewTestNip47Controller(svc).
+		HandleGetInfoEvent(ctx, nip47Request, dbRequestEvent.ID, app, publishResponse)
+
+	require.NotNil(t, publishedResponse)
+	assert.Nil(t, publishedResponse.Error)
+	infoResponse := publishedResponse.Result.(*getInfoResponse)
+	assert.Nil(t, infoResponse.LightningAddress)
 }

@@ -30,8 +30,8 @@ type AppConfig struct {
 	LogToFile                          bool   `envconfig:"LOG_TO_FILE" default:"true"`
 	Network                            string `envconfig:"NETWORK"`
 	LDKNetwork                         string `envconfig:"LDK_NETWORK"`
-	LDKEsploraServer                   string `envconfig:"LDK_ESPLORA_SERVER" default:"https://electrs.getalbypro.com"` // TODO: remove LDK prefix
-	LDKElectrumServer                  string `envconfig:"LDK_ELECTRUM_SERVER"`
+	LDKEsploraServer                   string `envconfig:"LDK_ESPLORA_SERVER"`
+	LDKElectrumServer                  string `envconfig:"LDK_ELECTRUM_SERVER" default:"ssl://electrum.getalbypro.com:50002"`
 	LDKGossipSource                    string `envconfig:"LDK_GOSSIP_SOURCE"`
 	LDKLogLevel                        string `envconfig:"LDK_LOG_LEVEL" default:"3"`
 	LDKMaxChannelSaturationPowerOfHalf uint8  `envconfig:"LDK_MAX_CHANNEL_SATURATION" default:"2"`
@@ -59,8 +59,9 @@ type AppConfig struct {
 	GoProfilerAddr                     string `envconfig:"GO_PROFILER_ADDR"`
 	EnableAdvancedSetup                bool   `envconfig:"ENABLE_ADVANCED_SETUP" default:"true"`
 	AutoUnlockPassword                 string `envconfig:"AUTO_UNLOCK_PASSWORD"`
+	SetupCode                          string `envconfig:"SETUP_CODE"`
 	LogDBQueries                       bool   `envconfig:"LOG_DB_QUERIES" default:"false"`
-	BoltzApi                           string `envconfig:"BOLTZ_API" default:"https://api.boltz.exchange"`
+	BoltzApi                           string `envconfig:"BOLTZ_API"`
 	HideUpdateBanner                   bool   `envconfig:"HIDE_UPDATE_BANNER" default:"false"`
 	CLNAddress                         string `envconfig:"CLN_ADDRESS"`
 	CLNLightningDir                    string `envconfig:"CLN_LIGHTNING_DIR"`
@@ -94,6 +95,7 @@ type Config interface {
 	GetMempoolUrl() string
 	GetEnv() *AppConfig
 	CheckUnlockPassword(password string) bool
+	IsUnlockPasswordCheckSet() (bool, error)
 	ChangeUnlockPassword(currentUnlockPassword string, newUnlockPassword string) error
 	SetAutoUnlockPassword(unlockPassword string) error
 	SaveUnlockPasswordCheck(encryptionKey string) error

@@ -60,28 +60,11 @@ func NewLNDService(ctx context.Context, eventPublisher events.EventPublisher, ln
 		return nil, err
 	}
 
-	var nodeInfo *lnclient.NodeInfo
-	maxRetries := 60
-	for i := range maxRetries {
-		nodeInfo, err = fetchNodeInfo(ctx, lndClient)
-		if err == nil {
-			break
-		}
-		logger.Logger.WithFields(logrus.Fields{
-			"iteration": i,
-		}).WithError(err).Error("Failed to connect to LND, retrying in 10s")
-
-		select {
-		case <-time.After(10 * time.Second):
-		case <-ctx.Done():
-			logger.Logger.WithError(ctx.Err()).Error("Context cancelled during LND connection retries")
-			return nil, ctx.Err()
-		}
-	}
-
+	// confirm LND is running by fetching the node info
+	nodeInfo, err := fetchNodeInfo(ctx, lndClient)
 	if err != nil {
-		logger.Logger.WithError(err).Error("Failed to connect to LND on final attempt, not attempting further retries")
-		return nil, err
+		logger.Logger.WithError(err).Error("Failed to connect to LND")
+		return nil, fmt.Errorf("connect to LND: %w", err)
 	}
 
 	lndCtx, cancel := context.WithCancel(ctx)
@@ -1146,10 +1129,15 @@ func (svc *LNDService) UpdateChannel(ctx context.Context, updateChannelRequest *
 	}
 
 	var nodePolicy *lnrpc.RoutingPolicy
-	if channelEdge.Node1Pub == svc.client.IdentityPubkey {
+	switch svc.GetPubkey() {
+	case channelEdge.Node1Pub:
 		nodePolicy = channelEdge.Node1Policy
-	} else {
+	case channelEdge.Node2Pub:
 		nodePolicy = channelEdge.Node2Policy
+	}
+	if nodePolicy == nil {
+		logger.Logger.WithField("request", updateChannelRequest).Error("Failed to find our routing policy for the channel")
+		return errors.New("no routing policy found for our side of the channel")
 	}
 
 	_, err = svc.client.UpdateChannel(ctx, &lnrpc.PolicyUpdateRequest{

@@ -37,7 +37,13 @@ export function MigrateNode() {
       setLoading(true);
 
       if (_isHttpMode) {
-        const response = await fetch("/api/backup", {
+        // native fetch because request() parses the response as JSON, but this
+        // returns a binary file. The base path must be added manually.
+        let backupUrl = "/api/backup";
+        if (import.meta.env.BASE_URL !== "/") {
+          backupUrl = import.meta.env.BASE_URL + backupUrl;
+        }
+        const response = await fetch(backupUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -107,6 +113,16 @@ export function MigrateNode() {
           <p className="text-sm ml-7">
             To import the migration file, you must have a brand new Alby Hub on
             another device and use the “Advanced” option during the onboarding.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-3 items-center">
+            <TriangleAlertIcon className="size-4" />
+            <h3>Never share your migration file</h3>
+          </div>
+          <p className="text-sm ml-7">
+            Anyone with this file and your unlock password can access your
+            funds. Never send it to anyone. Alby support will never ask for it.
           </p>
         </div>
         <div className="flex flex-col gap-1">
